@@ -47,7 +47,7 @@
 #define ADP536X_OC_CHG_THRESHOLD_400mA	0x07
 
 /* Macro for setting buck output voltage */
-#define ADP536X_VOUT_BUCK(volt) ((u8_t)(((volt)-0.6)/0.05))
+#define ADP536X_VOUT_BUCK(volt) ((u8_t)(((volt)-0.6+0.025)/0.05))
 
 /**
  * @brief Initialize ADP536X.
