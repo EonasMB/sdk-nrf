@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2018 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <zephyr.h>
@@ -68,6 +68,17 @@ LOG_MODULE_REGISTER(lte_lc, CONFIG_LTE_LINK_CONTROL_LOG_LEVEL);
 #define AT_CSCON_RRC_MODE_INDEX			1
 #define AT_CSCON_READ_RRC_MODE_INDEX		2
 
+#define SYS_MODE_PREFERRED \
+	(IS_ENABLED(CONFIG_LTE_NETWORK_MODE_LTE_M)	? \
+		LTE_LC_SYSTEM_MODE_LTEM			: \
+	IS_ENABLED(CONFIG_LTE_NETWORK_MODE_NBIOT)	? \
+		LTE_LC_SYSTEM_MODE_NBIOT		: \
+	IS_ENABLED(CONFIG_LTE_NETWORK_MODE_LTE_M_GPS)	? \
+		LTE_LC_SYSTEM_MODE_LTEM_GPS		: \
+	IS_ENABLED(CONFIG_LTE_NETWORK_MODE_NBIOT_GPS)	? \
+		LTE_LC_SYSTEM_MODE_NBIOT_GPS		: \
+	LTE_LC_SYSTEM_MODE_NONE)
+
 /* Forward declarations */
 static int parse_nw_reg_status(const char *at_response,
 			       enum lte_lc_nw_reg_status *status,
@@ -86,7 +97,7 @@ static int parse_psm_cfg(struct at_param_list *at_params,
 static lte_lc_evt_handler_t evt_handler;
 static bool is_initialized;
 
-#if defined(CONFIG_BSD_LIBRARY_TRACE_ENABLED)
+#if defined(CONFIG_NRF_MODEM_LIB_TRACE_ENABLED)
 /* Enable modem trace */
 static const char mdm_trace[] = "AT%XMODEMTRACE=1,2";
 #endif
@@ -110,6 +121,8 @@ static const char unlock_plmn[] = "AT+COPS=0";
 static const char edrx_disable[] = "AT+CEDRXS=3";
 /* Default eDRX setting */
 static char edrx_param[5] = CONFIG_LTE_EDRX_REQ_VALUE;
+/* Default PTW setting */
+static char ptw_param[5] = CONFIG_LTE_PTW_VALUE;
 /* Default PSM RAT setting */
 static char psm_param_rat[9] = CONFIG_LTE_PSM_REQ_RAT;
 /* Default PSM RPATU setting */
@@ -124,17 +137,20 @@ static const char normal[] = "AT+CFUN=1";
 static const char offline[] = "AT+CFUN=4";
 /* Enable CSCON (RRC mode) notifications */
 static const char cscon[] = "AT+CSCON=1";
+/* Disable RAI */
+static const char rai_disable[] = "AT+%XRAI=0";
+/* Default RAI setting */
+static char rai_param[2] = CONFIG_LTE_RAI_REQ_VALUE;
 
-static const enum lte_lc_system_mode sys_mode_preferred =
-	IS_ENABLED(CONFIG_LTE_NETWORK_MODE_LTE_M)	?
-		LTE_LC_SYSTEM_MODE_LTEM			:
-	IS_ENABLED(CONFIG_LTE_NETWORK_MODE_NBIOT)	?
-		LTE_LC_SYSTEM_MODE_NBIOT		:
-	IS_ENABLED(CONFIG_LTE_NETWORK_MODE_LTE_M_GPS)	?
-		LTE_LC_SYSTEM_MODE_LTEM_GPS		:
-	IS_ENABLED(CONFIG_LTE_NETWORK_MODE_NBIOT_GPS)	?
-		LTE_LC_SYSTEM_MODE_NBIOT_GPS		:
-	LTE_LC_SYSTEM_MODE_NONE;
+static const enum lte_lc_system_mode sys_mode_preferred = SYS_MODE_PREFERRED;
+
+/* System mode to use when connecting to LTE network, which can be changed in
+ * two ways:
+ *	- Automatically to fallback mode (if enabled) when connection to the
+ *	  preferred mode is unsuccessful and times out.
+ *	- By calling lte_lc_system_mode_set() and set the mode explicitly.
+ */
+static enum lte_lc_system_mode sys_mode_target = SYS_MODE_PREFERRED;
 
 static const enum lte_lc_system_mode sys_mode_fallback =
 #if IS_ENABLED(CONFIG_LTE_NETWORK_USE_FALLBACK)
@@ -149,6 +165,8 @@ static const enum lte_lc_system_mode sys_mode_fallback =
 #endif
 	LTE_LC_SYSTEM_MODE_NONE;
 
+static enum lte_lc_system_mode sys_mode_current = LTE_LC_SYSTEM_MODE_NONE;
+
 /* Parameters to be passed when using AT%XSYSTEMMMODE=<params> */
 static const char *const system_mode_params[] = {
 	[LTE_LC_SYSTEM_MODE_LTEM]	= "1,0,0,0",
@@ -158,19 +176,14 @@ static const char *const system_mode_params[] = {
 	[LTE_LC_SYSTEM_MODE_NBIOT_GPS]	= "0,1,1,0",
 };
 
-#if defined(CONFIG_LWM2M_CARRIER) && !defined(CONFIG_GPS_USE_SIM)
-#if defined(CONFIG_BOARD_THINGY91_NRF9160NS)
-	const char *const lwm2m_ant_cfg[] = {
-			"AT%XMAGPIO=1,1,1,7,1,746,803,2,698,748,"
-			"2,1710,2200,3,824,894,4,880,960,5,791,849,"
-			"7,1574,1577",
-			"AT%XCOEX0=1,1,1570,1580"};
-#elif defined(CONFIG_BOARD_NRF9160_PCA10090NS)
-	const char *const lwm2m_ant_cfg[] = {
-			"AT\%XMAGPIO=1,0,0,1,1,1574,1577",
-			"AT\%XCOEX0=1,1,1570,1580"};
-#endif
-#endif
+#if !defined(CONFIG_NRF_MODEM_LIB_SYS_INIT) && \
+	defined(CONFIG_BOARD_THINGY91_NRF9160NS)
+static const char thingy91_magpio[] = {
+	"AT%XMAGPIO=1,1,1,7,1,746,803,2,698,748,"
+	"2,1710,2200,3,824,894,4,880,960,5,791,849,"
+	"7,1565,1586"
+};
+#endif /* !CONFIG_NRF_MODEM_LIB_SYS_INIT && CONFIG_BOARD_THINGY91_NRF9160NS */
 
 static struct k_sem link;
 
@@ -252,37 +265,52 @@ static int parse_cereg(const char *notification,
 
 	*reg_status = status;
 
-	/* Parse tracking area code */
-	err = at_params_string_get(&resp_list,
-				   AT_CEREG_TAC_INDEX,
-				   str_buf, &len);
-	if (err) {
-		LOG_ERR("Could not get tracking area code, error: %d", err);
-		goto clean_exit;
+	if ((*reg_status != LTE_LC_NW_REG_UICC_FAIL) &&
+	    (at_params_valid_count_get(&resp_list) > AT_CEREG_CELL_ID_INDEX)) {
+		/* Parse tracking area code */
+		err = at_params_string_get(&resp_list,
+					AT_CEREG_TAC_INDEX,
+					str_buf, &len);
+		if (err) {
+			LOG_ERR("Could not get tracking area code, error: %d", err);
+			goto clean_exit;
+		}
+
+		str_buf[len] = '\0';
+		cell->tac = strtoul(str_buf, NULL, 16);
+
+		/* Parse cell ID */
+		len = sizeof(str_buf) - 1;
+
+		err = at_params_string_get(&resp_list,
+					AT_CEREG_CELL_ID_INDEX,
+					str_buf, &len);
+		if (err) {
+			LOG_ERR("Could not get cell ID, error: %d", err);
+			goto clean_exit;
+		}
+
+		str_buf[len] = '\0';
+		cell->id = strtoul(str_buf, NULL, 16);
+	} else {
+		cell->tac = UINT32_MAX;
+		cell->id = UINT32_MAX;
 	}
 
-	str_buf[len] = '\0';
-	cell->tac = strtoul(str_buf, NULL, 16);
-
-	/* Parse cell ID */
-	len = sizeof(str_buf) - 1;
-
-	err = at_params_string_get(&resp_list,
-				   AT_CEREG_CELL_ID_INDEX,
-				   str_buf, &len);
-	if (err) {
-		LOG_ERR("Could not get cell ID, error: %d", err);
-		goto clean_exit;
-	}
-
-	str_buf[len] = '\0';
-	cell->id = strtoul(str_buf, NULL, 16);
-
-	/* Parse PSM configuration */
-	err = parse_psm_cfg(&resp_list, true, psm_cfg);
-	if (err) {
-		LOG_ERR("Failed to parse PSM configuration, error: %d", err);
-		goto clean_exit;
+	/* Parse PSM configuration only when registered */
+	if (((*reg_status == LTE_LC_NW_REG_REGISTERED_HOME) ||
+	    (*reg_status == LTE_LC_NW_REG_REGISTERED_ROAMING)) &&
+	     (at_params_valid_count_get(&resp_list) > AT_CEREG_TAU_INDEX)) {
+		err = parse_psm_cfg(&resp_list, true, psm_cfg);
+		if (err) {
+			LOG_ERR("Failed to parse PSM configuration, error: %d",
+				err);
+			goto clean_exit;
+		}
+	} else {
+		/* When device is not registered, PSM valies are invalid */
+		psm_cfg->tau = -1;
+		psm_cfg->active_time = -1;
 	}
 
 clean_exit:
@@ -312,7 +340,8 @@ static void at_handler(void *context, const char *response)
 
 	switch (notif_type) {
 	case LTE_LC_NOTIF_CEREG: {
-		static enum lte_lc_nw_reg_status prev_reg_status;
+		static enum lte_lc_nw_reg_status prev_reg_status =
+			LTE_LC_NW_REG_NOT_REGISTERED;
 		static struct lte_lc_cell prev_cell;
 		static struct lte_lc_psm_cfg prev_psm_cfg;
 		enum lte_lc_nw_reg_status reg_status = 0;
@@ -353,6 +382,11 @@ static void at_handler(void *context, const char *response)
 			memcpy(&prev_cell, &cell, sizeof(struct lte_lc_cell));
 			memcpy(&evt.cell, &cell, sizeof(struct lte_lc_cell));
 			evt_handler(&evt);
+		}
+
+		if ((reg_status != LTE_LC_NW_REG_REGISTERED_HOME) &&
+		    (reg_status != LTE_LC_NW_REG_REGISTERED_ROAMING)) {
+			return;
 		}
 
 		/* PSM configuration update event */
@@ -421,17 +455,17 @@ static int parse_psm_cfg(struct at_param_list *at_params,
 	size_t timer_str_len = sizeof(timer_str) - 1;
 	size_t unit_str_len = sizeof(unit_str) - 1;
 	size_t lut_idx;
-	u32_t timer_unit, timer_value;
+	uint32_t timer_unit, timer_value;
 
 	/* Lookup table for T3324 timer used for PSM active time in seconds.
 	 * Ref: GPRS Timer 2 IE in 3GPP TS 24.008 Table 10.5.163/3GPP TS 24.008.
 	 */
-	static const u32_t t3324_lookup[8] = {2, 60, 600, 60, 60, 60, 60, 0};
+	static const uint32_t t3324_lookup[8] = {2, 60, 600, 60, 60, 60, 60, 0};
 
 	/* Lookup table for T3412 timer used for periodic TAU. Unit is seconds.
 	 * Ref: GPRS Timer 3 in 3GPP TS 24.008 Table 10.5.163a/3GPP TS 24.008.
 	 */
-	static const u32_t t3412_lookup[8] = {600, 3600, 36000, 2, 30, 60,
+	static const uint32_t t3412_lookup[8] = {600, 3600, 36000, 2, 30, 60,
 					      1152000, 0};
 
 	/* Parse periodic TAU string */
@@ -494,28 +528,38 @@ static int w_lte_lc_init(void)
 		return -EALREADY;
 	}
 
+	k_sem_init(&link, 0, 1);
+
+	err = lte_lc_system_mode_get(&sys_mode_current);
+	if (err) {
+		LOG_ERR("Could not get current system mode, error: %d", err);
+		return err;
+	}
+
 	err = at_notif_register_handler(NULL, at_handler);
 	if (err) {
 		LOG_ERR("Can't register AT handler, error: %d", err);
 		return err;
 	}
 
-	err = lte_lc_system_mode_set(sys_mode_preferred);
-	if (err) {
-		LOG_ERR("Could not set system mode, error: %d", err);
-		return err;
+	if (sys_mode_current != sys_mode_target) {
+		err = lte_lc_system_mode_set(sys_mode_target);
+		if (err) {
+			LOG_ERR("Could not set system mode, error: %d", err);
+			return err;
+		}
+	} else {
+		LOG_DBG("Preferred system mode (%d) is already configured",
+			sys_mode_current);
 	}
 
-#if defined(CONFIG_LWM2M_CARRIER) && !defined(CONFIG_GPS_USE_SIM) && \
-	(defined(CONFIG_BOARD_THINGY91_NRF9160NS) || \
-	 defined(CONFIG_BOARD_NRF9160_PCA10090NS))
-	/* Configuring MAGPIO/COEX, so that the correct antenna
+#if !defined(CONFIG_NRF_MODEM_LIB_SYS_INIT) && \
+	defined(CONFIG_BOARD_THINGY91_NRF9160NS)
+	/* Configuring MAGPIO, so that the correct antenna
 	 * matching network is used for each LTE band and GPS.
 	 */
-	for (size_t i = 0; i < ARRAY_SIZE(lwm2m_ant_cfg); i++) {
-		if (at_cmd_write(lwm2m_ant_cfg[i], NULL, 0, NULL) != 0) {
-			return -EIO;
-		}
+	if (at_cmd_write(thingy91_magpio, NULL, 0, NULL) != 0) {
+		return -EIO;
 	}
 #endif
 
@@ -525,7 +569,7 @@ static int w_lte_lc_init(void)
 		return -EIO;
 	}
 #endif
-#if defined(CONFIG_BSD_LIBRARY_TRACE_ENABLED)
+#if defined(CONFIG_NRF_MODEM_LIB_TRACE_ENABLED)
 	if (at_cmd_write(mdm_trace, NULL, 0, NULL) != 0) {
 		return -EIO;
 	}
@@ -605,7 +649,6 @@ static int w_lte_lc_init(void)
 static int w_lte_lc_connect(bool blocking)
 {
 	int err;
-	enum lte_lc_system_mode current_network_mode = sys_mode_preferred;
 	bool retry;
 
 	if (!is_initialized) {
@@ -618,7 +661,7 @@ static int w_lte_lc_connect(bool blocking)
 	do {
 		retry = false;
 
-		err = lte_lc_system_mode_set(current_network_mode);
+		err = lte_lc_system_mode_set(sys_mode_target);
 		if (err) {
 			return err;
 		}
@@ -633,8 +676,8 @@ static int w_lte_lc_connect(bool blocking)
 			LOG_INF("Network connection attempt timed out");
 
 			if (IS_ENABLED(CONFIG_LTE_NETWORK_USE_FALLBACK) &&
-			    (current_network_mode == sys_mode_preferred)) {
-				current_network_mode = sys_mode_fallback;
+			    (sys_mode_target == sys_mode_preferred)) {
+				sys_mode_target = sys_mode_fallback;
 				retry = true;
 
 				err = lte_lc_offline();
@@ -652,7 +695,7 @@ static int w_lte_lc_connect(bool blocking)
 	return err;
 }
 
-static int w_lte_lc_init_and_connect(struct device *unused)
+static int w_lte_lc_init_and_connect(const struct device *unused)
 {
 	int ret;
 
@@ -700,7 +743,7 @@ int lte_lc_connect(void)
 /* lte lc Init and connect wrapper */
 int lte_lc_init_and_connect(void)
 {
-	struct device *x = 0;
+	const struct device *x = 0;
 
 	int err = w_lte_lc_init_and_connect(x);
 
@@ -749,6 +792,17 @@ int lte_lc_power_off(void)
 	return 0;
 }
 
+int lte_lc_deinit(void)
+{
+	if (is_initialized) {
+		is_initialized = false;
+		at_notif_deregister_handler(NULL, at_handler);
+		return lte_lc_power_off();
+	}
+
+	return 0;
+}
+
 int lte_lc_normal(void)
 {
 	if (at_cmd_write(normal, NULL, 0, NULL) != 0) {
@@ -760,13 +814,27 @@ int lte_lc_normal(void)
 
 int lte_lc_psm_param_set(const char *rptau, const char *rat)
 {
-	if (rptau == NULL || strlen(rptau) != 8 ||
-		rat == NULL || strlen(rat) != 8) {
+	if ((rptau != NULL && strlen(rptau) != 8) ||
+	    (rat != NULL && strlen(rat) != 8)) {
 		return -EINVAL;
 	}
 
-	memcpy(psm_param_rptau, rptau, sizeof(psm_param_rptau));
-	memcpy(psm_param_rat, rat, sizeof(psm_param_rat));
+	if (rptau != NULL) {
+		strcpy(psm_param_rptau, rptau);
+		LOG_DBG("RPTAU set to %s", log_strdup(psm_param_rptau));
+	} else {
+		*psm_param_rptau = '\0';
+		LOG_DBG("RPTAU use default");
+	}
+
+	if (rat != NULL) {
+		strcpy(psm_param_rat, rat);
+		LOG_DBG("RAT set to %s", log_strdup(psm_param_rat));
+	} else {
+		*psm_param_rat = '\0';
+		LOG_DBG("RAT use default");
+	}
+
 	return 0;
 }
 
@@ -777,10 +845,23 @@ int lte_lc_psm_req(bool enable)
 	if (enable) {
 		char psm_req[40];
 
-		snprintf(psm_req, sizeof(psm_req),
+		if (strlen(psm_param_rptau) == 8 &&
+		    strlen(psm_param_rat) == 8) {
+			snprintf(psm_req, sizeof(psm_req),
 			"AT+CPSMS=1,,,\"%s\",\"%s\"",
 			psm_param_rptau, psm_param_rat);
-
+		} else if (strlen(psm_param_rptau) == 8) {
+			snprintf(psm_req, sizeof(psm_req),
+				"AT+CPSMS=1,,,\"%s\"",
+				psm_param_rptau);
+		} else if (strlen(psm_param_rat) == 8) {
+			snprintf(psm_req, sizeof(psm_req),
+				"AT+CPSMS=1,,,,\"%s\"",
+				psm_param_rat);
+		} else {
+			snprintf(psm_req, sizeof(psm_req),
+				"AT+CPSMS=1");
+		}
 		err = at_cmd_write(psm_req, NULL, 0, NULL);
 	} else {
 		err = at_cmd_write(psm_disable, NULL, 0, NULL);
@@ -852,11 +933,34 @@ parse_psm_clean_exit:
 
 int lte_lc_edrx_param_set(const char *edrx)
 {
-	if (edrx == NULL || strlen(edrx) != 4) {
+	if (edrx != NULL && strlen(edrx) != 4) {
 		return -EINVAL;
 	}
 
-	memcpy(edrx_param, edrx, sizeof(edrx_param));
+	if (edrx != NULL) {
+		strcpy(edrx_param, edrx);
+		LOG_DBG("eDRX set to %s", log_strdup(edrx_param));
+	} else {
+		*edrx_param = '\0';
+		LOG_DBG("eDRX use default");
+	}
+
+	return 0;
+}
+
+int lte_lc_ptw_set(const char *ptw)
+{
+	if (ptw != NULL && strlen(ptw) != 4) {
+		return -EINVAL;
+	}
+
+	if (ptw != NULL) {
+		strcpy(ptw_param, ptw);
+		LOG_DBG("PTW set to %s", log_strdup(ptw_param));
+	} else {
+		*ptw_param = '\0';
+		LOG_DBG("PTW use default");
+	}
 
 	return 0;
 }
@@ -864,6 +968,71 @@ int lte_lc_edrx_param_set(const char *edrx)
 int lte_lc_edrx_req(bool enable)
 {
 	int err, actt;
+	char req[25];
+
+	if (sys_mode_current == LTE_LC_SYSTEM_MODE_NONE) {
+		err = lte_lc_system_mode_get(&sys_mode_current);
+		if (err) {
+			return err;
+		}
+	}
+
+	switch (sys_mode_current) {
+	case LTE_LC_SYSTEM_MODE_LTEM:
+	case LTE_LC_SYSTEM_MODE_LTEM_GPS:
+		actt = AT_CEDRXS_ACTT_WB;
+		break;
+	case LTE_LC_SYSTEM_MODE_NBIOT:
+	case LTE_LC_SYSTEM_MODE_NBIOT_GPS:
+		actt = AT_CEDRXS_ACTT_NB;
+		break;
+	default:
+		LOG_ERR("Cannot request eDRX for this system mode (%d)",
+			sys_mode_current);
+		return -EOPNOTSUPP;
+	}
+
+	if (enable) {
+		if (strlen(edrx_param) == 4) {
+			snprintf(req, sizeof(req),
+				"AT+CEDRXS=2,%d,\"%s\"", actt, edrx_param);
+		} else {
+			snprintf(req, sizeof(req),
+				"AT+CEDRXS=2,%d", actt);
+		}
+		err = at_cmd_write(req, NULL, 0, NULL);
+	} else {
+		err = at_cmd_write(edrx_disable, NULL, 0, NULL);
+	}
+	if (err) {
+		LOG_ERR("Failed to %s eDRX, error: %d",
+			enable ? "enable" : "disable", err);
+		return err;
+	}
+
+	/* PTW must be requested after eDRX is enabled */
+	if (enable) {
+		if (strlen(ptw_param) == 4) {
+			snprintf(req, sizeof(req),
+				"AT%%XPTW=%d,\"%s\"", actt, ptw_param);
+		} else {
+			snprintf(req, sizeof(req),
+				"AT%%XPTW=%d", actt);
+		}
+		err = at_cmd_write(req, NULL, 0, NULL);
+		if (err) {
+			LOG_ERR("Failed to request PTW (%s), error: %d",
+				log_strdup(req), err);
+			return err;
+		}
+	}
+
+	return 0;
+}
+
+int lte_lc_rai_req(bool enable)
+{
+	int err;
 	enum lte_lc_system_mode mode;
 
 	err = lte_lc_system_mode_get(&mode);
@@ -874,29 +1043,42 @@ int lte_lc_edrx_req(bool enable)
 	switch (mode) {
 	case LTE_LC_SYSTEM_MODE_LTEM:
 	case LTE_LC_SYSTEM_MODE_LTEM_GPS:
-		actt = AT_CEDRXS_ACTT_WB;
-		break;
+		LOG_ERR("RAI not supported for LTE-M networks");
+		return -EOPNOTSUPP;
 	case LTE_LC_SYSTEM_MODE_NBIOT:
 	case LTE_LC_SYSTEM_MODE_NBIOT_GPS:
-		actt = AT_CEDRXS_ACTT_NB;
 		break;
 	default:
 		LOG_ERR("Unknown system mode");
-		LOG_ERR("Cannot request eDRX for unknown system mode");
+		LOG_ERR("Cannot request RAI for unknown system mode");
 		return -EOPNOTSUPP;
 	}
 
 	if (enable) {
-		char edrx_req[25];
+		char rai_req[10];
 
-		snprintf(edrx_req, sizeof(edrx_req),
-			 "AT+CEDRXS=2,%d,\"%s\"", actt, edrx_param);
-		err = at_cmd_write(edrx_req, NULL, 0, NULL);
+		snprintf(rai_req, sizeof(rai_req), "AT%%XRAI=%s", rai_param);
+		err = at_cmd_write(rai_req, NULL, 0, NULL);
 	} else {
-		err = at_cmd_write(edrx_disable, NULL, 0, NULL);
+		err = at_cmd_write(rai_disable, NULL, 0, NULL);
 	}
 
 	return err;
+}
+
+int lte_lc_rai_param_set(const char *value)
+{
+	if (value == NULL || strlen(value) != 1) {
+		return -EINVAL;
+	}
+
+	if (value[0] == '3' || value[0] == '4') {
+		memcpy(rai_param, value, 2);
+	} else {
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 int lte_lc_pdp_context_set(enum lte_lc_pdp_type type, const char *apn,
@@ -1109,16 +1291,7 @@ clean_exit:
  */
 static int get_ptw_multiplier(float *ptw_multiplier)
 {
-	int err;
-	enum lte_lc_system_mode sys_mode;
-
-	err = lte_lc_system_mode_get(&sys_mode);
-	if (err) {
-		LOG_ERR("Failed to get system mode, error: %d", err);
-		return err;
-	}
-
-	switch (sys_mode) {
+	switch (sys_mode_current) {
 	case LTE_LC_SYSTEM_MODE_LTEM: /* Fall through */
 	case LTE_LC_SYSTEM_MODE_LTEM_GPS:
 		*ptw_multiplier = 1.28;
@@ -1137,21 +1310,19 @@ static int get_ptw_multiplier(float *ptw_multiplier)
 	return 0;
 }
 
-static int get_edrx_value(u8_t idx, float *edrx_value)
+static int get_edrx_value(uint8_t idx, float *edrx_value)
 {
-	int err;
-	enum lte_lc_system_mode sys_mode;
-	u16_t multiplier = 0;
+	uint16_t multiplier = 0;
 
 	/* Lookup table to eDRX multiplier values, based on T_eDRX values found
 	 * in Table 10.5.5.32/3GPP TS 24.008. The actual value is
 	 * (multiplier * 10.24 s), except for the first entry which is handled
 	 * as a special case per note 3 in the specification.
 	 */
-	static const u16_t edrx_lookup_ltem[16] = {
+	static const uint16_t edrx_lookup_ltem[16] = {
 		0, 1, 2, 4, 6, 8, 10, 12, 14, 16, 32, 64, 128, 256, 256, 256
 	};
-	static const u16_t edrx_lookup_nbiot[16] = {
+	static const uint16_t edrx_lookup_nbiot[16] = {
 		2, 2, 2, 4, 2, 8, 2, 2, 2, 16, 32, 64, 128, 256, 512, 1024
 	};
 
@@ -1159,13 +1330,7 @@ static int get_edrx_value(u8_t idx, float *edrx_value)
 		return -EINVAL;
 	}
 
-	err = lte_lc_system_mode_get(&sys_mode);
-	if (err) {
-		LOG_ERR("Failed to get system mode, error: %d", err);
-		return err;
-	}
-
-	switch (sys_mode) {
+	switch (sys_mode_current) {
 	case LTE_LC_SYSTEM_MODE_LTEM: /* Fall through */
 	case LTE_LC_SYSTEM_MODE_LTEM_GPS:
 		multiplier = edrx_lookup_ltem[idx];
@@ -1183,7 +1348,7 @@ static int get_edrx_value(u8_t idx, float *edrx_value)
 
 	*edrx_value = multiplier == 0 ? 5.12 : multiplier * 10.24;
 
-	return err;
+	return 0;
 }
 
 /**@brief Parses an AT command response, and returns the current eDRX settings.
@@ -1200,7 +1365,7 @@ static int parse_edrx(const char *at_response,
 		      struct lte_lc_edrx_cfg *cfg)
 {
 	int err;
-	u8_t idx;
+	uint8_t idx;
 	struct at_param_list resp_list = {0};
 	char tmp_buf[5];
 	size_t len = sizeof(tmp_buf) - 1;
@@ -1363,6 +1528,9 @@ int lte_lc_system_mode_set(enum lte_lc_system_mode mode)
 		LOG_ERR("Could not send AT command, error: %d", err);
 	}
 
+	sys_mode_current = mode;
+	sys_mode_target = mode;
+
 	return err;
 }
 
@@ -1417,8 +1585,10 @@ int lte_lc_system_mode_get(enum lte_lc_system_mode *mode)
 
 	/* We skip the first parameter, as that's the response prefix,
 	 * "%XSYSTEMMODE:" in this case."
+	 * The last parameter sets the preferred mode, and is not implemented
+	 * yet on the modem side, so we ignore it.
 	 */
-	for (size_t i = 1; i < AT_XSYSTEMMODE_PARAMS_COUNT; i++) {
+	for (size_t i = 1; i < AT_XSYSTEMMODE_PARAMS_COUNT - 1; i++) {
 		int param;
 
 		err = at_params_int_get(&resp_list, i, &param);
@@ -1457,7 +1627,13 @@ int lte_lc_system_mode_get(enum lte_lc_system_mode *mode)
 	default:
 		LOG_ERR("Invalid system mode, assuming parsing error");
 		err = -EFAULT;
-		break;
+		goto clean_exit;
+	}
+
+	if (sys_mode_current != *mode) {
+		LOG_DBG("Current system mode updated from %d to %d",
+			sys_mode_current, *mode);
+		sys_mode_current = *mode;
 	}
 
 clean_exit:
@@ -1529,8 +1705,7 @@ clean_exit:
 }
 
 #if defined(CONFIG_LTE_AUTO_INIT_AND_CONNECT)
-DEVICE_DECLARE(lte_link_control);
-DEVICE_AND_API_INIT(lte_link_control, "LTE_LINK_CONTROL",
-		    w_lte_lc_init_and_connect, NULL, NULL, APPLICATION,
-		    CONFIG_APPLICATION_INIT_PRIORITY, NULL);
+SYS_DEVICE_DEFINE("LTE_LINK_CONTROL", w_lte_lc_init_and_connect,
+		  device_pm_control_nop,
+		  APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
 #endif /* CONFIG_LTE_AUTO_INIT_AND_CONNECT */

@@ -1,8 +1,9 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
+
 #include <pm_config.h>
 #include <storage/flash_map.h>
 #include <logging/log.h>
@@ -24,7 +25,7 @@ LOG_MODULE_DECLARE(zboss_osif, CONFIG_ZBOSS_OSIF_LOG_LEVEL);
 /* ZBOSS callout that should be called once flash erase page operation
  * is finished.
  */
-zb_void_t zb_nvram_erase_finished(zb_uint8_t page);
+void zb_nvram_erase_finished(zb_uint8_t page);
 
 static const struct flash_area *fa; /* ZBOSS nvram */
 
@@ -86,7 +87,7 @@ zb_ret_t zb_osif_nvram_read(zb_uint8_t page, zb_uint32_t pos, zb_uint8_t *buf,
 	LOG_DBG("Function: %s, page: %d, pos: %d, len: %d",
 		__func__, page, pos, len);
 
-	u32_t flash_addr = get_page_base_offset(page) + pos;
+	uint32_t flash_addr = get_page_base_offset(page) + pos;
 
 	int err = flash_area_read(fa, flash_addr, buf, len);
 
@@ -100,7 +101,7 @@ zb_ret_t zb_osif_nvram_read(zb_uint8_t page, zb_uint32_t pos, zb_uint8_t *buf,
 zb_ret_t zb_osif_nvram_write(zb_uint8_t page, zb_uint32_t pos, void *buf,
 			     zb_uint16_t len)
 {
-	u32_t flash_addr = get_page_base_offset(page) + pos;
+	uint32_t flash_addr = get_page_base_offset(page) + pos;
 
 	if (page >= zb_get_nvram_page_count()) {
 		return RET_PAGE_NOT_FOUND;
@@ -112,6 +113,10 @@ zb_ret_t zb_osif_nvram_write(zb_uint8_t page, zb_uint32_t pos, void *buf,
 
 	if (!buf) {
 		return RET_INVALID_PARAMETER_3;
+	}
+
+	if (len == 0) {
+		return RET_OK;
 	}
 
 	if (!(len >> 2)) {
@@ -198,7 +203,7 @@ zb_ret_t zb_osif_production_configuration_read(zb_uint8_t *buffer,
 					       zb_uint16_t len,
 					       zb_uint16_t offset)
 {
-	u32_t pc_offset = ZB_OSIF_PRODUCTION_CONFIG_MAGIC_SIZE + offset;
+	uint32_t pc_offset = ZB_OSIF_PRODUCTION_CONFIG_MAGIC_SIZE + offset;
 	int err = flash_area_read(fa_pc, pc_offset, buffer, len);
 
 	if (err) {

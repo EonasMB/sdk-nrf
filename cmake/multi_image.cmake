@@ -1,7 +1,7 @@
 #
 # Copyright (c) 2019 Nordic Semiconductor ASA
 #
-# SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
 #
 
 function(share content)
@@ -27,18 +27,46 @@ if(IMAGE_NAME)
   share("set(${IMAGE_NAME}KERNEL_ELF_NAME ${KERNEL_ELF_NAME})")
   share("list(APPEND ${IMAGE_NAME}BUILD_BYPRODUCTS ${PROJECT_BINARY_DIR}/${KERNEL_HEX_NAME})")
   share("list(APPEND ${IMAGE_NAME}BUILD_BYPRODUCTS ${PROJECT_BINARY_DIR}/${KERNEL_ELF_NAME})")
+  # Share the signing key file so that the parent image can use it to
+  # generate signed update candidates.
+  if(CONFIG_BOOT_SIGNATURE_KEY_FILE)
+   share("set(${IMAGE_NAME}SIGNATURE_KEY_FILE ${CONFIG_BOOT_SIGNATURE_KEY_FILE})")
+  endif()
 
   file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/shared_vars.cmake
     CONTENT $<TARGET_PROPERTY:zephyr_property_target,shared_vars>
     )
 endif(IMAGE_NAME)
 
+
 function(add_child_image)
+  # Adds a child image to the build.
+  #
+  # Required arguments are:
+  # NAME - The name of the child image
+  # SOURCE_DIR - The source dir of the child image
+  #
+  # Optional arguments are:
+  # DOMAIN - The domain to place the child image in.
+  #
+  # Depending on the value of CONFIG_${NAME}_BUILD_STRATEGY the child image
+  # is either built from source, included as a hex file, or ignored.
+  #
+  # See chapter "Multi-image builds" in the documentation for more details.
+
   set(oneValueArgs NAME SOURCE_DIR DOMAIN)
   cmake_parse_arguments(ACI "" "${oneValueArgs}" "" ${ARGN})
 
   if (NOT ACI_NAME OR NOT ACI_SOURCE_DIR)
     message(FATAL_ERROR "Missing parameter, required: NAME SOURCE_DIR")
+  endif()
+
+  if (NOT CONFIG_PARTITION_MANAGER_ENABLED)
+    message(FATAL_ERROR
+      "CONFIG_PARTITION_MANAGER_ENABLED was not set for image ${ACI_NAME}."
+      "This option must be set for an image to support being added as a child"
+      "image through 'add_child_image'. This is typically done by invoking the"
+      " `build_strategy` kconfig template for the child image.")
   endif()
 
   string(TOUPPER ${ACI_NAME} UPNAME)
@@ -57,42 +85,119 @@ function(add_child_image)
   endif()
 endfunction()
 
-# See 'add_child_image'
 function(add_child_image_from_source)
-  set(oneValueArgs NAME SOURCE_DIR DOMAIN)
+  # See 'add_child_image'
+  set(oneValueArgs NAME SOURCE_DIR DOMAIN BOARD)
   cmake_parse_arguments(ACI "" "${oneValueArgs}" "" ${ARGN})
 
   if (NOT ACI_NAME OR NOT ACI_SOURCE_DIR)
     message(FATAL_ERROR "Missing parameter, required: NAME SOURCE_DIR")
   endif()
 
+  # Pass information that the partition manager is enabled to Kconfig.
+  add_overlay_config(
+    ${ACI_NAME}
+    ${NRF_DIR}/subsys/partition_manager/partition_manager_enabled.conf
+    )
+
+  if (${ACI_NAME}_BOARD)
+    message(FATAL_ERROR
+      "${ACI_NAME}_BOARD set in outer scope. Will be ignored, use "
+      "`add_child_image(BOARD ${${ACI_NAME}_BOARD} ...)` for adding a child "
+      "image for specific board")
+  endif()
 
   # Add the new partition manager domain if needed.
   # The domain corresponds to the BOARD without the 'ns' suffix.
   if (ACI_DOMAIN)
-    if (${ACI_NAME}_BOARD)
+    if ("${ACI_BOARD}" STREQUAL "")
       message(FATAL_ERROR
-        "Parent image cannot set BOARD of the child image when DOMAIN is set")
+        "No board specified for domain '${ACI_DOMAIN}'. This configuration is "
+        "typically defined in ${BOARD_DIR}/Kconfig")
     endif()
-    set(${ACI_NAME}_BOARD ${ACI_DOMAIN})
-    set(${ACI_DOMAIN}_PM_DOMAIN_DYNAMIC_PARTITION ${ACI_NAME} CACHE STRING "" FORCE)
-  elseif (NOT ${ACI_NAME}_BOARD)
-    # Set ${ACI_NAME}_BOARD based on what BOARD is set to if not already set by parent
-    # It is assumed that only the root app will be built as non-secure.
-    # This is not a valid assumption as there might be multiple non-secure
-    # images defined.
-    # TODO: Allow multiple non-secure images by using Kconfig to set the
-    # secure/non-secure property rather than using a separate board definition.
-    get_board_without_ns_suffix(${BOARD} ${ACI_NAME}_BOARD)
+
+    # This needs to be made globally available as it is used in other files.
+    set(${ACI_DOMAIN}_PM_DOMAIN_DYNAMIC_PARTITION ${ACI_NAME} CACHE INTERNAL "")
+
+    if (NOT (${ACI_DOMAIN} IN_LIST PM_DOMAINS))
+      list(APPEND PM_DOMAINS ${ACI_DOMAIN})
+      set_property(GLOBAL APPEND PROPERTY PM_DOMAINS ${ACI_DOMAIN})
+    endif()
+  elseif (NOT ACI_BOARD)
+    # No BOARD is given as argument, this triggers automatic conversion of
+    # *.ns board from parent image.
+    get_board_without_ns_suffix(${BOARD} ACI_BOARD)
   endif()
 
-  if (NOT (${${ACI_NAME}_BOARD} IN_LIST PM_DOMAINS))
-    list(APPEND PM_DOMAINS ${${ACI_NAME}_BOARD})
-    share("list(APPEND PM_DOMAINS ${${ACI_NAME}_BOARD})")
+  if (NOT ACI_DOMAIN AND DOMAIN)
+    # If no domain is specified, a child image will inherit the domain of
+    # its parent.
+    set(ACI_DOMAIN ${DOMAIN})
+    set(inherited " (inherited)")
   endif()
 
+  set(${ACI_NAME}_DOMAIN ${ACI_DOMAIN})
+  set(${ACI_NAME}_BOARD ${ACI_BOARD})
 
-  message("\n=== child image ${ACI_NAME} - ${${ACI_NAME}_BOARD} begin ===")
+  message("\n=== child image ${ACI_NAME} - ${ACI_DOMAIN}${inherited} begin ===")
+
+  # It is possible for a sample to use a custom set of Kconfig fragments for a
+  # child image, or to append additional Kconfig fragments to the child image.
+  # Note that <ACI_NAME> in this context is the name of the child image as
+  # passed to the 'add_child_image' function.
+  #
+  # <child-sample> DIRECTORY
+  # | - prj.conf (A)
+  # | - prj_<desc>.conf (B)
+  # | - boards DIRECTORY
+  # | | - <board>.conf (C)
+  # | | - <board>_<desc>.conf (D)
+
+
+  # <current-sample> DIRECTORY
+  # | - prj.conf
+  # | - prj_<desc>.conf
+  # | - child_image DIRECTORY
+  #     |-- <ACI_NAME>.conf (I)             Fragment, used together with (A) and (C)
+  #     |-- <ACI_NAME>_<desc>.conf (J)      Fragment, used together with (B) and (D)
+  #     |-- <ACI_NAME> DIRECTORY
+  #         |-- boards DIRECTORY
+  #         |   |-- <board>.conf (E)        If present, use instead of (C), requires (G).
+  #         |   |-- <board>_<desc>.conf (F) If present, use instead of (D), requires (H).
+  #         |-- prj.conf (G)                If present, use instead of (A)
+  #         |                               Note that (C) is ignored if this is present.
+  #         |                               Use (E) instead.
+  #         |-- prj_<desc>.conf (H)         If present, used instead of (B) when user
+  #                                         specify `-DCONF_FILE=prj_<desc>.conf for
+  #                                         parent image. Note that any (C) is ignored
+  #                                         if this is present. Use (F) instead.
+  #
+  # Note: The folder `child_image/<ACI_NAME>` is only need when configurations
+  #       files must be used instead of the child image default configs.
+  #       The append a child image default config, place the addetional settings
+  #       in `child_image/<ACI_NAME>.conf`.
+  set(ACI_CONF_DIR ${APPLICATION_SOURCE_DIR}/child_image)
+  set(ACI_NAME_CONF_DIR ${APPLICATION_SOURCE_DIR}/child_image/${ACI_NAME})
+  if (NOT ${ACI_NAME}_CONF_FILE)
+    ncs_file(CONF_FILES ${ACI_NAME_CONF_DIR}
+             BOARD ${ACI_BOARD}
+             KCONF ${ACI_NAME}_CONF_FILE
+             BUILD ${CONF_FILE_BUILD_TYPE}
+    )
+
+    # Check for configuration fragment. The contents of these are appended
+    # to the project configuration, as opposed to the CONF_FILE which is used
+    # as the base configuration.
+    if (DEFINED CONF_FILE_BUILD_TYPE)
+      set(child_image_conf_fragment ${ACI_CONF_DIR}/${ACI_NAME}_${CONF_FILE_BUILD_TYPE}.conf)
+    else()
+      set(child_image_conf_fragment ${ACI_CONF_DIR}/${ACI_NAME}.conf)
+    endif()
+    if (EXISTS ${child_image_conf_fragment})
+      add_overlay_config(${ACI_NAME} ${child_image_conf_fragment})
+    endif()
+  endif()
+
   # Construct a list of variables that, when present in the root
   # image, should be passed on to all child images as well.
   list(APPEND
@@ -182,7 +287,7 @@ function(add_child_image_from_source)
     message(FATAL_ERROR "CMake generation for ${ACI_NAME} failed, aborting. Command: ${ret}")
   endif()
 
-  message("=== child image ${ACI_NAME} - ${${ACI_NAME}_BOARD} end ===\n")
+  message("=== child image ${ACI_NAME} - ${ACI_DOMAIN}${inherited} end ===\n")
 
   # Include some variables from the child image into the parent image
   # namespace
@@ -191,7 +296,6 @@ function(add_child_image_from_source)
   # Increase the scope of this variable to make it more available
   set(${ACI_NAME}_KERNEL_HEX_NAME ${${ACI_NAME}_KERNEL_HEX_NAME} CACHE STRING "" FORCE)
   set(${ACI_NAME}_KERNEL_ELF_NAME ${${ACI_NAME}_KERNEL_ELF_NAME} CACHE STRING "" FORCE)
-  set(PM_DOMAINS ${PM_DOMAINS} CACHE STRING "" FORCE)
 
   if(MULTI_IMAGE_DEBUG_MAKEFILE AND "${CMAKE_GENERATOR}" STREQUAL "Ninja")
     set(multi_image_build_args "-d" "${MULTI_IMAGE_DEBUG_MAKEFILE}")
@@ -231,21 +335,6 @@ function(add_child_image_from_source)
       PM_IMAGES
       "${ACI_NAME}"
       )
-  endif()
-
-  if (ACI_DOMAIN)
-    add_custom_target(${ACI_NAME}_flash
-                      COMMAND
-                      ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}/${ACI_NAME}
-                      --target flash
-                      DEPENDS
-                      ${ACI_NAME}_subimage
-    )
-
-    set_property(TARGET zephyr_property_target
-                 APPEND PROPERTY FLASH_DEPENDENCIES
-                 ${ACI_NAME}_flash
-  )
   endif()
 
 endfunction()

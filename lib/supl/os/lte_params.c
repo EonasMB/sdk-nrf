@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <zephyr.h>
@@ -75,7 +75,7 @@ static int parse_lte_mcc(struct lte_params *lte,
 		return -1;
 	}
 
-	u8_t c;
+	uint8_t c;
 
 	if (char2hex(buf[1], &c) != 0) {
 		memset(lte->mcc, 0, 3);
@@ -118,7 +118,7 @@ static int parse_lte_mnc(struct lte_params *lte,
 		return -1;
 	}
 
-	u8_t c;
+	uint8_t c;
 
 	if (char2hex(buf[4], &c) != 0) {
 		memset(lte->mnc, 0, 3);

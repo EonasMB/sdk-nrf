@@ -1,15 +1,8 @@
 #
 # Copyright (c) 2019 Nordic Semiconductor
 #
-# SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
 #
-
-macro(add_partition_manager_config config_file)
-  get_filename_component(pm_path ${config_file} REALPATH)
-  get_filename_component(pm_filename ${config_file} NAME)
-  list(APPEND PM_SUBSYS_PATHS ${pm_path})
-  list(APPEND PM_SUBSYS_OUTPUT_PATHS ${CMAKE_CURRENT_BINARY_DIR}/${pm_filename})
-endmacro()
 
 function(preprocess_pm_yml in_file out_file)
   execute_process(
@@ -28,6 +21,20 @@ function(preprocess_pm_yml in_file out_file)
     message(FATAL_ERROR "command failed with return code: ${ret}")
   endif()
 
+  if (DEFINED IMAGE_NAME)
+    # Share location of original source file so that the parent image can add it
+    # to the CMAKE_CONFIGURE_DEPENDS list.
+    share("list(APPEND ${IMAGE_NAME}PM_YML_DEP_FILES ${in_file})")
+
+    # Share location of preprocessed pm.yml file so that the parent image can
+    # use it as source for partition manager configuration.
+    share("list(APPEND ${IMAGE_NAME}PM_YML_FILES ${out_file})")
+  endif()
+
+  # Re-configure (Re-execute all CMakeLists.txt code) when original
+  # (not preprocessed) configuration file changes.
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${in_file})
+
 endfunction()
 
 
@@ -35,19 +42,39 @@ endfunction()
 # Store the preprocessed output in the binary dir of the subsystems
 # to avoid overwriting pm.yml files.
 if (CONFIG_SETTINGS_FCB OR CONFIG_SETTINGS_NVS)
-  add_partition_manager_config(pm.yml.settings)
+  ncs_add_partition_manager_config(pm.yml.settings)
 endif()
 
 if (CONFIG_FILE_SYSTEM)
-  add_partition_manager_config(pm.yml.file_system)
+  ncs_add_partition_manager_config(pm.yml.file_system)
 endif()
 
 if (CONFIG_ZIGBEE)
-  add_partition_manager_config(pm.yml.zboss)
+  ncs_add_partition_manager_config(pm.yml.zboss)
 endif()
 
 if (CONFIG_NVS AND NOT CONFIG_SETTINGS_NVS)
-  add_partition_manager_config(pm.yml.nvs)
+  ncs_add_partition_manager_config(pm.yml.nvs)
+endif()
+
+if (CONFIG_NRF_MODEM_LIB)
+  ncs_add_partition_manager_config(pm.yml.libmodem)
+endif()
+
+if (CONFIG_BT_RPMSG_NRF53)
+  ncs_add_partition_manager_config(pm.yml.bt_rpmsg_nrf53)
+endif()
+
+if (CONFIG_NRF53_UPGRADE_NETWORK_CORE)
+  ncs_add_partition_manager_config(pm.yml.pcd)
+endif()
+
+if (CONFIG_BUILD_WITH_TFM)
+  ncs_add_partition_manager_config(pm.yml.tfm)
+endif()
+
+if (CONFIG_TRUSTED_EXECUTION_NONSECURE OR CONFIG_TRUSTED_EXECUTION_SECURE)
+  ncs_add_partition_manager_config(pm.yml.trustzone)
 endif()
 
 # We are using partition manager if we are a child image or if we are
@@ -73,6 +100,9 @@ if((EXISTS ${CMAKE_SOURCE_DIR}/pm.yml) AND IMAGE_NAME)
     ${ZEPHYR_BINARY_DIR}/include/generated/pm.yml
     )
 endif()
+
+get_property(PM_SUBSYS_PATHS GLOBAL PROPERTY PM_SUBSYS_PATHS)
+get_property(PM_SUBSYS_OUTPUT_PATHS GLOBAL PROPERTY PM_SUBSYS_OUTPUT_PATHS)
 
 # Check for partition manager configurations defined by subsystems
 # This is a list of absolute paths to these pm.yml files.

@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <zephyr.h>
@@ -23,7 +23,7 @@ int open_supl_socket(void)
 	int err = -1;
 	int proto;
 	int gai_cnt = 0;
-	u16_t port;
+	uint16_t port;
 	struct addrinfo *addr;
 	struct addrinfo *info;
 

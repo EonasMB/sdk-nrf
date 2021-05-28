@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #ifndef _HIDS_EVENT_H_
@@ -31,7 +31,7 @@ extern "C" {
 struct hid_notification_event {
 	struct event_header header; /**< Event header. */
 
-	u8_t report_id; /**< HID report id. */
+	uint8_t report_id; /**< HID report id. */
 	bool enabled; /**< True if report is enabled. */
 };
 

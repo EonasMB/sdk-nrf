@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <zephyr.h>
@@ -30,12 +30,13 @@ struct ls_ch_data {
 	struct sensor_value data;
 };
 
+static int64_t ls_ts;
 static struct ls_ch_data ls_ch_red = { .type = SENSOR_CHAN_RED };
 static struct ls_ch_data ls_ch_green = { .type = SENSOR_CHAN_GREEN };
 static struct ls_ch_data ls_ch_blue = { .type = SENSOR_CHAN_BLUE };
 static struct ls_ch_data ls_ch_ir = { .type = SENSOR_CHAN_IR };
 static char *ls_dev_name = CONFIG_LIGHT_SENSOR_DEV_NAME;
-static struct device *ls_dev;
+static const struct device *ls_dev;
 static struct k_spinlock ls_lock;
 static struct ls_ch_data *ls_data[LS_CH__END] = { [LS_CH_RED] = &ls_ch_red,
 						  [LS_CH_GREEN] = &ls_ch_green,
@@ -44,15 +45,20 @@ static struct ls_ch_data *ls_data[LS_CH__END] = { [LS_CH_RED] = &ls_ch_red,
 static light_sensor_data_ready_cb ls_cb;
 static struct k_delayed_work ls_poller;
 static struct k_work_q *ls_work_q;
-static u32_t data_send_interval_s = CONFIG_LIGHT_SENSOR_DATA_SEND_INTERVAL;
+static uint32_t data_send_interval_s = CONFIG_LIGHT_SENSOR_DATA_SEND_INTERVAL;
 static bool initialized;
 
 static void light_sensor_poll_fn(struct k_work *work);
 
-static inline int submit_poll_work(const u32_t delay_s)
+static inline int submit_poll_work(const uint32_t delay_s)
 {
 	return k_delayed_work_submit_to_queue(ls_work_q, &ls_poller,
-					      K_SECONDS((u32_t)delay_s));
+					      K_SECONDS((uint32_t)delay_s));
+}
+
+int light_sensor_poll(void)
+{
+	return initialized ? submit_poll_work(0) : -ENXIO;
 }
 
 int light_sensor_init_and_start(struct k_work_q *work_q,
@@ -95,6 +101,7 @@ int light_sensor_get_data(struct light_sensor_data *const data)
 	data->green = ls_data[LS_CH_GREEN]->data.val1;
 	data->blue = ls_data[LS_CH_BLUE]->data.val1;
 	data->ir = ls_data[LS_CH_IR]->data.val1;
+	data->ts = ls_ts;
 
 	k_spin_unlock(&ls_lock, key);
 
@@ -128,6 +135,8 @@ void light_sensor_poll_fn(struct k_work *work)
 		}
 	}
 
+	ls_ts = k_uptime_get();
+
 	k_spin_unlock(&ls_lock, key);
 
 	if (ls_cb != NULL) {
@@ -137,7 +146,7 @@ void light_sensor_poll_fn(struct k_work *work)
 	submit_poll_work(data_send_interval_s);
 }
 
-void light_sensor_set_send_interval(const u32_t interval_s)
+void light_sensor_set_send_interval(const uint32_t interval_s)
 {
 	if (interval_s == data_send_interval_s) {
 		return;
@@ -157,7 +166,7 @@ void light_sensor_set_send_interval(const u32_t interval_s)
 	}
 }
 
-u32_t light_sensor_get_send_interval(void)
+uint32_t light_sensor_get_send_interval(void)
 {
 	return data_send_interval_s;
 }

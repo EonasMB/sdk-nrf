@@ -2,7 +2,7 @@
 set(NRF_RELATIVE_DIR "../../..")
 set(NCS_RELATIVE_DIR "../../../..")
 
-set(NCS_TOOLCHAIN_MINIMUM_REQUIRED 1.3.0)
+set(NCS_TOOLCHAIN_MINIMUM_REQUIRED 1.5.0)
 
 # Set the current NRF_DIR
 # The use of get_filename_component ensures that the final path variable will not contain `../..`.
@@ -10,6 +10,12 @@ get_filename_component(NRF_DIR ${CMAKE_CURRENT_LIST_DIR}/${NRF_RELATIVE_DIR} ABS
 get_filename_component(NCS_DIR ${CMAKE_CURRENT_LIST_DIR}/${NCS_RELATIVE_DIR} ABSOLUTE)
 
 file(STRINGS ${NRF_DIR}/VERSION NCS_VERSION LIMIT_COUNT 1 LENGTH_MINIMUM 5)
+string(REGEX MATCH "([^\.]*)\.([^\.]*)\.([^-]*)[-]?(.*)" OUT_VAR ${NCS_VERSION})
+
+set(NCS_VERSION_MAJOR ${CMAKE_MATCH_1})
+set(NCS_VERSION_MINOR ${CMAKE_MATCH_2})
+set(NCS_VERSION_PATCH ${CMAKE_MATCH_3})
+set(NCS_VERSION_EXTRA ${CMAKE_MATCH_4})
 
 if(NOT NO_BOILERPLATE)
   if(NCS_TOOLCHAIN_VERSION)
@@ -20,7 +26,7 @@ if(NOT NO_BOILERPLATE)
   if(NOT ${NCS_TOOLCHAIN_MINIMUM_REQUIRED} STREQUAL NONE)
     find_package(NcsToolchain ${NCS_TOOLCHAIN_MINIMUM_REQUIRED} ${EXACT} QUIET)
     if(${NcsToolchain_FOUND})
-      message("-- Using NCS Toolchain ${NCS_TOOLCHAIN_MINIMUM_REQUIRED} for building. (${NcsToolchain_DIR})")
+      message("-- Using NCS Toolchain ${NcsToolchain_VERSION} for building. (${NcsToolchain_DIR})")
       set(GIT_EXECUTABLE           ${NCS_TOOLCHAIN_GIT}     CACHE FILEPATH "NCS Toolchain Git")
 
       set(DTC                      ${NCS_TOOLCHAIN_DTC}     CACHE FILEPATH "NCS Toolchain DTC")

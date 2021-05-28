@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <nrf.h>
@@ -9,7 +9,7 @@
 #include <init.h>
 
 #ifdef CONFIG_DISABLE_FLASH_PATCH
-static int disable_flash_patch(struct device *dev)
+static int disable_flash_patch(const struct device *dev)
 {
 	(void)dev;
 

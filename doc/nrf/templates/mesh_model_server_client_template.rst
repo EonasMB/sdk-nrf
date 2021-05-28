@@ -3,6 +3,10 @@
 Mesh server and client model template
 #####################################
 
+.. contents::
+   :local:
+   :depth: 2
+
 .. tip::
    Use this template to create pages that describe the server or the client models of the related mesh model, or both.
    To create the main mesh model page, use the :ref:`bt_mesh_model_main_template`.
@@ -57,7 +61,7 @@ States
 .. note::
    This section is valid for server models only.
 
-The XYZ Server model can assume several states, all described in this section.
+The XYZ Server model contains the following states:
 
 Generic Power On: `bt_mesh_template_location_state`
     The Generic Power On state controls the default value of the disco light when the device powers up.

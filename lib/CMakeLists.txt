@@ -1,12 +1,13 @@
 #
 # Copyright (c) 2018 Nordic Semiconductor ASA
 #
-# SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
 #
 
 add_subdirectory(bin)
 
-add_subdirectory_ifdef(CONFIG_BSD_LIBRARY bsdlib)
+add_subdirectory_ifdef(CONFIG_AGPS agps)
+add_subdirectory_ifdef(CONFIG_NRF_MODEM_LIB nrf_modem_lib)
 add_subdirectory_ifdef(CONFIG_DK_LIBRARY dk_buttons_and_leds)
 add_subdirectory_ifdef(CONFIG_AT_CMD at_cmd)
 add_subdirectory_ifdef(CONFIG_AT_NOTIF at_notif)
@@ -20,8 +21,10 @@ add_subdirectory_ifdef(CONFIG_ADP536X adp536x)
 add_subdirectory_ifdef(CONFIG_ST25R3911B_LIB st25r3911b)
 add_subdirectory_ifdef(CONFIG_FPROTECT fprotect)
 add_subdirectory(flash_patch)
+add_subdirectory_ifdef(CONFIG_RAM_POWER_DOWN_LIBRARY ram_pwrdn)
 add_subdirectory_ifdef(CONFIG_RESET_ON_FATAL_ERROR fatal_error)
 add_subdirectory_ifdef(CONFIG_MODEM_KEY_MGMT modem_key_mgmt)
 add_subdirectory_ifdef(CONFIG_SMS sms)
 add_subdirectory_ifdef(CONFIG_SUPL_CLIENT_LIB supl)
 add_subdirectory_ifdef(CONFIG_DATE_TIME date_time)
+add_subdirectory_ifdef(CONFIG_EDGE_IMPULSE edge_impulse)

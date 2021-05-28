@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #ifndef _BLE_DATA_EVENT_H_
@@ -26,7 +26,7 @@ extern "C" {
 struct ble_data_event {
 	struct event_header header;
 
-	u8_t *buf;
+	uint8_t *buf;
 	size_t len;
 };
 

@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2018 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #ifndef FPROTECT_H_
@@ -35,7 +35,7 @@ extern "C" {
  *                  devices where there is a limited number of configuration
  *                  registers which are used for all address ranges.
  */
-int fprotect_area(u32_t start, size_t length);
+int fprotect_area(uint32_t start, size_t length);
 
 #ifdef __cplusplus
 }

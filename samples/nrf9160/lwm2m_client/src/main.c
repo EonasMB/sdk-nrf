@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <zephyr.h>
@@ -9,7 +9,7 @@
 #include <drivers/gpio.h>
 #include <stdio.h>
 #include <net/lwm2m.h>
-#include <modem/bsdlib.h>
+#include <modem/nrf_modem_lib.h>
 #include <settings/settings.h>
 
 #include <logging/log.h>
@@ -40,15 +40,28 @@ BUILD_ASSERT(sizeof(CONFIG_APP_LWM2M_SERVER) > 1,
 #define IMEI_LEN		15
 #define ENDPOINT_NAME_LEN	(IMEI_LEN + 8)
 
-static u8_t endpoint_name[ENDPOINT_NAME_LEN+1];
-static u8_t imei_buf[IMEI_LEN + 5]; /* account for /n/r */
+#define LWM2M_SECURITY_PRE_SHARED_KEY 0
+#define LWM2M_SECURITY_RAW_PUBLIC_KEY 1
+#define LWM2M_SECURITY_CERTIFICATE 2
+#define LWM2M_SECURITY_NO_SEC 3
+
+static uint8_t endpoint_name[ENDPOINT_NAME_LEN+1];
+static uint8_t imei_buf[IMEI_LEN + 5]; /* account for /n/r */
 static struct lwm2m_ctx client;
 
 #if defined(CONFIG_LWM2M_DTLS_SUPPORT)
 #include "config.h"
 #endif /* CONFIG_LWM2M_DTLS_SUPPORT */
 
-static struct k_sem quit_lock;
+static struct k_sem lwm2m_restart;
+
+static void rd_client_event(struct lwm2m_ctx *client,
+			    enum lwm2m_rd_client_event client_event);
+
+void client_acknowledge(void)
+{
+	lwm2m_acknowledge(&client);
+}
 
 /**@brief User interface event handler. */
 static void ui_evt_handler(struct ui_evt *evt)
@@ -142,6 +155,160 @@ static int lwm2m_setup(void)
 	return 0;
 }
 
+int lwm2m_security_index_to_inst_id(int index);
+
+static int find_server_security_instance(void)
+{
+	char pathstr[10];
+	bool bootstrap;
+	int i;
+	int instance;
+	int ret;
+
+	for (i = 0; i < CONFIG_LWM2M_SECURITY_INSTANCE_COUNT; i++) {
+		instance = lwm2m_security_index_to_inst_id(i);
+		if (instance < 0) {
+			LOG_DBG("Empty instance at index %d", i);
+			continue;
+		}
+
+		snprintk(pathstr, sizeof(pathstr), "0/%d/1", instance);
+
+		ret = lwm2m_engine_get_bool(pathstr, &bootstrap);
+		if (ret < 0) {
+			LOG_ERR("Failed to check bootstrap, err %d", ret);
+			continue;
+		}
+
+		if (!bootstrap) {
+			LOG_DBG("Security instance found, %d", instance);
+			return instance;
+		}
+	}
+
+	return -1;
+}
+
+static int get_security_mode(int instance)
+{
+	char pathstr[10];
+	uint8_t security_mode;
+	int ret;
+
+	snprintk(pathstr, sizeof(pathstr), "0/%d/2", instance);
+
+	ret = lwm2m_engine_get_u8(pathstr, &security_mode);
+	if (ret < 0) {
+		LOG_ERR("Failed to obtain security mode, err %d", ret);
+		return -1;
+	}
+
+	return security_mode;
+}
+
+#if defined(CONFIG_LWM2M_DTLS_SUPPORT)
+static void provision_psk(int instance)
+{
+	char pathstr[10];
+	char psk_hex[64];
+	int ret;
+	uint8_t *identity;
+	uint16_t identity_len;
+	uint8_t *psk;
+	uint16_t psk_len;
+	uint8_t flags;
+
+
+	/* Obtain identity. */
+	snprintk(pathstr, sizeof(pathstr), "0/%d/3", instance);
+
+	ret = lwm2m_engine_get_res_data(pathstr, (void **)&identity,
+					&identity_len, &flags);
+	if (ret < 0) {
+		LOG_ERR("Failed to obtain client identity.");
+		return;
+	}
+
+	/* Obtain PSK. */
+	snprintk(pathstr, sizeof(pathstr), "0/%d/5", instance);
+
+	ret = lwm2m_engine_get_res_data(pathstr, (void **)&psk,
+					&psk_len, &flags);
+	if (ret < 0) {
+		LOG_ERR("Failed to obtain PSK.");
+		return;
+	}
+
+	/* Convert PSK to a format accepted by the modem. */
+	psk_len = bin2hex(psk, psk_len, psk_hex, sizeof(psk_hex));
+	if (psk_len == 0) {
+		LOG_ERR("PSK is too large to convert.");
+		return;
+	}
+
+	lwm2m_rd_client_stop(&client, rd_client_event);
+	lte_lc_offline();
+
+	ret = modem_key_mgmt_write(client.tls_tag,
+				   MODEM_KEY_MGMT_CRED_TYPE_PSK,
+				   psk_hex, psk_len);
+	if (ret < 0) {
+		LOG_ERR("Error setting cred tag %d type %d: Error %d",
+			client.tls_tag, MODEM_KEY_MGMT_CRED_TYPE_PSK,
+			ret);
+		goto exit;
+	}
+
+	ret = modem_key_mgmt_write(client.tls_tag,
+				   MODEM_KEY_MGMT_CRED_TYPE_IDENTITY,
+				   identity, identity_len);
+	if (ret < 0) {
+		LOG_ERR("Error setting cred tag %d type %d: Error %d",
+			client.tls_tag, MODEM_KEY_MGMT_CRED_TYPE_IDENTITY,
+			ret);
+	}
+
+exit:
+	lte_lc_connect();
+	lwm2m_rd_client_start(&client, endpoint_name, false, rd_client_event);
+}
+#endif
+
+static void provision_credentials(void)
+{
+	int security_instance;
+	int security_mode;
+
+	security_instance = find_server_security_instance();
+	if (security_instance == -1) {
+		LOG_ERR("No security instance found");
+		return;
+	}
+
+	security_mode = get_security_mode(security_instance);
+	if (security_mode == -1) {
+		return;
+	}
+
+	switch (security_mode) {
+#if defined(CONFIG_LWM2M_DTLS_SUPPORT)
+	case LWM2M_SECURITY_PRE_SHARED_KEY:
+		LOG_DBG("PSK mode, provisioning key and identity.");
+		client.tls_tag = SERVER_TLS_TAG;
+		provision_psk(security_instance);
+		break;
+#endif
+
+	case LWM2M_SECURITY_NO_SEC:
+		LOG_DBG("NoSec mode, no provisioning needed.");
+		break;
+
+	default:
+		LOG_ERR("Unsupported security mode");
+		break;
+	}
+}
+
 static void rd_client_event(struct lwm2m_ctx *client,
 			    enum lwm2m_rd_client_event client_event)
 {
@@ -161,6 +328,8 @@ static void rd_client_event(struct lwm2m_ctx *client,
 
 	case LWM2M_RD_CLIENT_EVENT_BOOTSTRAP_TRANSFER_COMPLETE:
 		LOG_DBG("Bootstrap transfer complete");
+		LOG_DBG("Boostrap finished, provisioning credentials.");
+		provision_credentials();
 		break;
 
 	case LWM2M_RD_CLIENT_EVENT_REGISTRATION_FAILURE:
@@ -190,16 +359,55 @@ static void rd_client_event(struct lwm2m_ctx *client,
 	case LWM2M_RD_CLIENT_EVENT_QUEUE_MODE_RX_OFF:
 		LOG_DBG("Queue mode RX window closed");
 		break;
+
+	case LWM2M_RD_CLIENT_EVENT_NETWORK_ERROR:
+		LOG_ERR("LwM2M engine reported a network error.");
+		k_sem_give(&lwm2m_restart);
+		break;
 	}
+}
+
+static void modem_connect(void)
+{
+	int ret;
+
+#if defined(CONFIG_LWM2M_QUEUE_MODE_ENABLED)
+	ret = lte_lc_psm_req(true);
+	if (ret < 0) {
+		LOG_ERR("lte_lc_psm_req, error: (%d)", ret);
+	} else {
+		LOG_INF("PSM mode requested");
+	}
+#endif
+
+	do {
+		LOG_INF("Connecting to LTE network.");
+		LOG_INF("This may take several minutes.");
+		ui_led_set_pattern(UI_LTE_CONNECTING);
+
+		ret = lte_lc_connect();
+		if (ret < 0) {
+			LOG_WRN("Failed to establish LTE connection (%d).",
+				ret);
+			LOG_WRN("Will retry in a minute.");
+			lte_lc_offline();
+			k_sleep(K_SECONDS(60));
+		} else {
+			LOG_INF("Connected to LTE network");
+			ui_led_set_pattern(UI_LTE_CONNECTED);
+		}
+	} while (ret < 0);
 }
 
 void main(void)
 {
+	uint32_t flags = IS_ENABLED(CONFIG_LWM2M_RD_CLIENT_SUPPORT_BOOTSTRAP) ?
+				    LWM2M_RD_CLIENT_FLAG_BOOTSTRAP : 0;
 	int ret;
 
 	LOG_INF(APP_BANNER);
 
-	k_sem_init(&quit_lock, 0, UINT_MAX);
+	k_sem_init(&lwm2m_restart, 0, 1);
 
 	ui_init(ui_evt_handler);
 
@@ -211,6 +419,11 @@ void main(void)
 
 	/* Load *all* persistent settings */
 	settings_load();
+
+#if defined(CONFIG_LWM2M_FIRMWARE_UPDATE_OBJ_SUPPORT)
+	/* Modem FW update needs to be verified before modem is used. */
+	lwm2m_verify_modem_fw_update();
+#endif
 
 	LOG_INF("Initializing modem.");
 	ret = lte_lc_init();
@@ -227,9 +440,6 @@ void main(void)
 
 	/* Setup LwM2M */
 	(void)memset(&client, 0x0, sizeof(client));
-
-	/* Workaround for improperly initialized socket fd in lwm2m engine. */
-	client.sock_fd = -1;
 
 	ret = lwm2m_setup();
 	if (ret < 0) {
@@ -263,25 +473,7 @@ void main(void)
 	}
 #endif
 
-	/* setup modem */
-	LOG_INF("Connecting to LTE network.");
-	LOG_INF("This may take several minutes.");
-	ui_led_set_pattern(UI_LTE_CONNECTING);
-
-	ret = lte_lc_connect();
-	__ASSERT(ret == 0, "LTE link could not be established.");
-
-	LOG_INF("Connected to LTE network");
-	ui_led_set_pattern(UI_LTE_CONNECTED);
-
-#if defined(CONFIG_LWM2M_QUEUE_MODE_ENABLED)
-	ret = lte_lc_psm_req(true);
-	if (ret < 0) {
-		LOG_ERR("lte_lc_psm_req, error: %d", ret);
-	} else {
-		LOG_INF("PSM mode requested");
-	}
-#endif
+	modem_connect();
 
 #if defined(CONFIG_LWM2M_CONN_MON_OBJ_SUPPORT)
 	ret = lwm2m_start_connmon();
@@ -290,6 +482,25 @@ void main(void)
 	}
 #endif
 
-	lwm2m_rd_client_start(&client, endpoint_name, rd_client_event);
-	k_sem_take(&quit_lock, K_FOREVER);
+	while (true) {
+		lwm2m_rd_client_start(&client, endpoint_name, flags,
+				      rd_client_event);
+
+		k_sem_take(&lwm2m_restart, K_FOREVER);
+
+		LOG_INF("LwM2M restart requested. The sample will try to"
+			" re-establish network connection.");
+
+		/* Stop the LwM2M engine. */
+		lwm2m_rd_client_stop(&client, rd_client_event);
+
+		/* Try to reconnect to the network. */
+		ret = lte_lc_offline();
+		if (ret < 0) {
+			LOG_ERR("Failed to put LTE link in offline state. (%d)",
+				ret);
+		}
+
+		modem_connect();
+	}
 }

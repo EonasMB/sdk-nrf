@@ -1,4 +1,10 @@
-#include "zb_types.h"
+/*
+ * Copyright (c) 2020 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
+ */
+
+#include <zb_types.h>
 
 /* stubs */
 #define ZB_BEACON_INTERVAL_USEC 15360

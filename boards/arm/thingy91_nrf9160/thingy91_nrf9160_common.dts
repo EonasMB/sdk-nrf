@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 / {
@@ -131,7 +131,7 @@
 	sck-pin = <3>;
 	mosi-pin = <4>;
 	miso-pin = <5>;
-	cs-gpios = <&gpio0 8 0>, <&gpio0 7 0>;
+	cs-gpios = <&gpio0 8 GPIO_ACTIVE_LOW>, <&gpio0 7 GPIO_ACTIVE_LOW>;
 
 	adxl362@0 {
 		compatible = "adi,adxl362";
@@ -219,16 +219,23 @@
 };
 
 / {
-	/* SRAM allocated and used by the BSD library */
-	sram0_bsd: memory@20010000 {
-		device_type = "memory";
-		compatible = "mmio-sram";
-	};
 
-	/* SRAM allocated to the Non-Secure image */
-	sram0_ns: memory@20020000 {
-		device_type = "memory";
-		compatible = "mmio-sram";
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		sram0_s: image_s@20000000 {
+			/* Secure image memory */
+		};
+
+		sram0_bsd: image_bsd@20010000 {
+			/* BSD (shared) memory */
+		};
+
+		sram0_ns: image_ns@20020000 {
+			/* Non-Secure image memory */
+		};
 	};
 };
 

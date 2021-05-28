@@ -3,10 +3,13 @@
 Light Lightness Control Client
 ##############################
 
-The Light Lightness Control (LC) Client configures and interacts with the Light LC Server.
+.. contents::
+   :local:
+   :depth: 2
 
-The Light LC Client creates a single model instance in the mesh composition data.
-The Light LC Client can send messages to both the Light LC Server and the Light LC Setup Server, as long as it has the right application keys.
+The Light Lightness Control (LC) Client configures and interacts with the :ref:`bt_mesh_light_ctrl_srv_readme`.
+
+The Light LC Client creates a single model instance in the mesh composition data, and it can send messages to both the Light LC Server and the Light LC Setup Server, as long as it has the right application keys.
 
 Extended models
 ***************

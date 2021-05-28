@@ -1,7 +1,7 @@
 #
 # Copyright (c) 2020 Nordic Semiconductor ASA
 #
-# SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
 #
 config COAP_UTILS
 	bool "Support for communication with CoAP"
@@ -9,7 +9,7 @@ config COAP_UTILS
 	depends on NET_SOCKETS
 	help
 	  Send and receive CoAP non-confirmable requests.
-	  Utilize CoAP and BSD Socket libraries.
+	  Utilize CoAP and Modem libraries.
 
 if COAP_UTILS
 

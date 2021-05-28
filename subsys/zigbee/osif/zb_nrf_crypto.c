@@ -1,15 +1,25 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <sys/__assert.h>
 #include <random/rand32.h>
 #include <logging/log.h>
-#include <crypto/cipher.h>
-#include "zb_nrf_crypto.h"
 #include <zboss_api.h>
+#if CONFIG_CRYPTO_NRF_ECB
+#include <crypto/cipher.h>
+#elif CONFIG_BT_CTLR
+#include <bluetooth/crypto.h>
+#elif CONFIG_ZIGBEE_USE_SOFTWARE_AES
+#include <tinycrypt/aes.h>
+#include <tinycrypt/constants.h>
+#else
+#error No crypto suite for Zigbee stack has been selected
+#endif
+
+#include "zb_nrf_crypto.h"
 
 #define ECB_AES_KEY_SIZE   16
 #define ECB_AES_BLOCK_SIZE 16
@@ -20,36 +30,12 @@
 
 LOG_MODULE_DECLARE(zboss_osif, CONFIG_ZBOSS_OSIF_LOG_LEVEL);
 
-static struct device *dev;
+#if CONFIG_CRYPTO_NRF_ECB
+static const struct device *dev;
 
-void zb_osif_rng_init(void)
-{
-}
-
-zb_uint32_t zb_random_seed(void)
-{
-	zb_uint32_t rnd_val = 0;
-	int err_code;
-
-	err_code = sys_csrand_get(&rnd_val, sizeof(rnd_val));
-	__ASSERT_NO_MSG(err_code == 0);
-	return rnd_val;
-}
-
-void zb_osif_aes_init(void)
-{
-	dev = device_get_binding(CONFIG_CRYPTO_NRF_ECB_DRV_NAME);
-	__ASSERT(dev, "Crypto driver not found");
-}
-
-void zb_osif_aes128_hw_encrypt(zb_uint8_t *key, zb_uint8_t *msg, zb_uint8_t *c)
+static void encrypt_aes(zb_uint8_t *key, zb_uint8_t *msg, zb_uint8_t *c)
 {
 	int err;
-
-	if (!(c && msg && key)) {
-		__ASSERT(false, "NULL argument passed");
-		return;
-	}
 
 	__ASSERT(dev, "encryption call too early");
 
@@ -79,4 +65,57 @@ void zb_osif_aes128_hw_encrypt(zb_uint8_t *key, zb_uint8_t *msg, zb_uint8_t *c)
 
 out:
 	cipher_free_session(dev, &ctx);
+}
+#elif CONFIG_BT_CTLR
+static void encrypt_aes(zb_uint8_t *key, zb_uint8_t *msg, zb_uint8_t *c)
+{
+	int err;
+
+	err = bt_encrypt_be(key, msg, c);
+	__ASSERT(!err, "Encryption failed");
+}
+#elif CONFIG_ZIGBEE_USE_SOFTWARE_AES
+static void encrypt_aes(zb_uint8_t *key, zb_uint8_t *msg, zb_uint8_t *c)
+{
+	int err;
+	struct tc_aes_key_sched_struct s;
+
+	err = tc_aes128_set_encrypt_key(&s, key);
+	__ASSERT(err == TC_CRYPTO_SUCCESS, "Key set failed");
+
+	err = tc_aes_encrypt(c, msg, &s);
+	__ASSERT(err == TC_CRYPTO_SUCCESS, "Encryption failed");
+}
+#endif
+
+void zb_osif_rng_init(void)
+{
+}
+
+zb_uint32_t zb_random_seed(void)
+{
+	zb_uint32_t rnd_val = 0;
+	int err_code;
+
+	err_code = sys_csrand_get(&rnd_val, sizeof(rnd_val));
+	__ASSERT_NO_MSG(err_code == 0);
+	return rnd_val;
+}
+
+void zb_osif_aes_init(void)
+{
+#if CONFIG_CRYPTO_NRF_ECB
+	dev = DEVICE_DT_GET(DT_INST(0, nordic_nrf_ecb));
+	__ASSERT(device_is_ready(dev), "Crypto driver not found");
+#endif
+}
+
+void zb_osif_aes128_hw_encrypt(zb_uint8_t *key, zb_uint8_t *msg, zb_uint8_t *c)
+{
+	if (!(c && msg && key)) {
+		__ASSERT(false, "NULL argument passed");
+		return;
+	}
+
+	encrypt_aes(key, msg, c);
 }

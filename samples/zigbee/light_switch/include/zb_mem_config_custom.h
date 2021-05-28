@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #ifndef ZB_MEM_CONFIG_CUSTOM_H
@@ -23,8 +23,9 @@
 #define ZB_CONFIG_APPLICATION_SIMPLE
 
 /**
- * Now common logic derives numerical parameters from the defined
- * configuration.
+ * The below section is for advanced users.
+ * Before modifying any values, please make sure you fully understand the
+ * impact, for example by reading zb_mem_config_common.h
  */
 #include "zb_mem_config_common.h"
 
@@ -35,8 +36,14 @@
 #undef ZB_CONFIG_SCHEDULER_Q_SIZE
 #define ZB_CONFIG_SCHEDULER_Q_SIZE 24
 
+/**
+ * Increase OTA transfer time by extending the APS duplicate rejection table.
+ * This value must be less than the amount of possible APS counter values (256).
+ */
+#undef ZB_CONFIG_APS_DUPS_TABLE_SIZE
+#define ZB_CONFIG_APS_DUPS_TABLE_SIZE 64
 
-/* Memory context definitions */
+/* Memory context definitions. */
 #include "zb_mem_config_context.h"
 
 #endif /* ZB_MEM_CONFIG_CUSTOM_H */

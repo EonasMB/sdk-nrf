@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <stdio.h>
@@ -1926,6 +1926,9 @@ ITEM_REGISTER(test_vector_aead_ccm_simple_data,
 	.p_nonce = "01f04f8873ea675d98a43a4e06",
 	.p_mac = "a3fd8b8dae862dc5"
 };
+
+/* This test vector file is very long. Chop off a few if this is set. */
+#if defined(CONFIG_CRYPTO_TEST_LARGE_VECTORS)
 
 /* AES CCM STAR - Custom Test vector. */
 ITEM_REGISTER(test_vector_aead_ccm_simple_data,
@@ -5092,4 +5095,5 @@ ITEM_REGISTER(test_vector_aead_ccm_simple_data,
 	.p_mac = "527e5ed0"
 };
 
+#endif /* CRYPTO_TEST_LARGE_VECTORS */
 #endif /* MBEDTLS_CIPHER_AES_256_CCM_C */

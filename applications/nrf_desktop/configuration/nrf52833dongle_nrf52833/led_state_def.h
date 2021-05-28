@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include "led_state.h"
@@ -18,7 +18,7 @@ const struct {} led_state_def_include_once;
 
 
 /* Map function to LED ID */
-static const u8_t led_map[LED_ID_COUNT] = {
+static const uint8_t led_map[LED_ID_COUNT] = {
 	[LED_ID_SYSTEM_STATE] = 0,
 	[LED_ID_PEER_STATE] = 1
 };

@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <logging/log.h>
@@ -26,7 +26,7 @@ int hexstr2hex(const char *in,
 	int hex_len = 0;
 
 	for (int i = 0; i < in_len; i++) {
-		u8_t c;
+		uint8_t c;
 
 		if (char2hex(in[i], &c) != 0) {
 			LOG_ERR("char2hex conversion failed");

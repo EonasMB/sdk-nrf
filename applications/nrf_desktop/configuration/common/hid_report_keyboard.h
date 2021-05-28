@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #ifndef _HID_REPORT_KEYBOARD_H_
@@ -70,6 +70,8 @@ extern "C" {
 	0x05, USAGE_PAGE_LEDS,						\
 	0x19, 0x01,       /* Usage Minimum (1) */			\
 	0x29, 0x05,       /* Usage Maximum (5) */			\
+	0x15, 0x00,       /* Logical Minimum (0) */			\
+	0x25, 0x01,       /* Logical Maximum (1) */			\
 	0x95, 0x05,       /* Report Count (5) */			\
 	0x75, 0x01,       /* Report Size (1) */				\
 	0x91, 0x02,       /* Output (Data, Variable, Absolute) */	\

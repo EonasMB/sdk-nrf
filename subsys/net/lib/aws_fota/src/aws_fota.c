@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <zephyr.h>
@@ -38,21 +38,21 @@ static enum fota_status fota_state = NONE;
 /* Document version is read out from the job execution document and is then
  * incremented with each accepted update to the job execution.
  */
-static u32_t execution_version_number;
+static uint32_t execution_version_number;
 
 /* File download progress % */
 static size_t download_progress;
 
 /* Allocated strings for topics */
-static u8_t notify_next_topic[AWS_JOBS_TOPIC_MAX_LEN];
-static u8_t update_topic[AWS_JOBS_TOPIC_MAX_LEN];
-static u8_t get_topic[AWS_JOBS_TOPIC_MAX_LEN];
+static uint8_t notify_next_topic[AWS_JOBS_TOPIC_MAX_LEN];
+static uint8_t update_topic[AWS_JOBS_TOPIC_MAX_LEN];
+static uint8_t get_topic[AWS_JOBS_TOPIC_MAX_LEN];
 
 /* Allocated buffers for keeping hostname, json payload and file_path */
-static u8_t payload_buf[CONFIG_AWS_FOTA_PAYLOAD_SIZE];
-static u8_t hostname[CONFIG_AWS_FOTA_HOSTNAME_MAX_LEN];
-static u8_t file_path[CONFIG_AWS_FOTA_FILE_PATH_MAX_LEN];
-static u8_t job_id[AWS_JOBS_JOB_ID_MAX_LEN];
+static uint8_t payload_buf[CONFIG_AWS_FOTA_PAYLOAD_SIZE];
+static uint8_t hostname[CONFIG_AWS_FOTA_HOSTNAME_MAX_LEN];
+static uint8_t file_path[CONFIG_AWS_FOTA_FILE_PATH_MAX_LEN];
+static uint8_t job_id[AWS_JOBS_JOB_ID_MAX_LEN];
 static aws_fota_callback_t callback;
 
 /**
@@ -66,11 +66,11 @@ static aws_fota_callback_t callback;
  *
  * @return 0 If successful otherwise a negative error code is returned.
  */
-static int get_published_payload(struct mqtt_client *client, u8_t *write_buf,
+static int get_published_payload(struct mqtt_client *client, uint8_t *write_buf,
 				 size_t length)
 {
-	u8_t *buf = write_buf;
-	u8_t *end = buf + length;
+	uint8_t *buf = write_buf;
+	uint8_t *end = buf + length;
 
 	if (length > sizeof(payload_buf)) {
 		return -EMSGSIZE;
@@ -94,8 +94,14 @@ static int get_published_payload(struct mqtt_client *client, u8_t *write_buf,
  */
 static inline void wait_for_update_accepted(void)
 {
+	uint32_t timeout = CONFIG_AWS_FOTA_UPDATE_TIMEOUT;
+
 	while (!accepted) {
-		k_yield();
+		k_sleep(K_SECONDS(1));
+		timeout--;
+		if (timeout == 0) {
+			break;
+		}
 	};
 }
 
@@ -112,7 +118,7 @@ static inline void wait_for_update_accepted(void)
  * @return 0 If successful otherwise a negative error code is returned.
  */
 static int update_job_execution(struct mqtt_client *const client,
-				const u8_t *job_id,
+				const uint8_t *job_id,
 				enum execution_status state,
 				const char *client_token)
 {
@@ -149,7 +155,7 @@ static int update_job_execution(struct mqtt_client *const client,
  * @return 0 If successful otherwise a negative error code is returned.
  */
 static int get_job_execution(struct mqtt_client *const client,
-			     u32_t payload_len)
+			     uint32_t payload_len)
 {
 	int err = get_published_payload(client, payload_buf, payload_len);
 
@@ -177,7 +183,7 @@ static int get_job_execution(struct mqtt_client *const client,
 		return err;
 	} else if (err == 0) {
 		LOG_DBG("Got only one field");
-		LOG_INF("No queued jobs for this device");
+		LOG_DBG("No queued jobs for this device");
 		return 0;
 	}
 
@@ -195,7 +201,7 @@ static int get_job_execution(struct mqtt_client *const client,
 				"%d", err);
 		return err;
 	}
-	LOG_INF("Subscribed to FOTA update topic %s", log_strdup(update_topic));
+	LOG_DBG("Subscribed to FOTA update topic %s", log_strdup(update_topic));
 
 	/* Set fota_state to DOWNLOAD_FIRMWARE, when we are subscribed
 	 * to job_id topics we will try to publish and if accepted we
@@ -216,10 +222,9 @@ static int get_job_execution(struct mqtt_client *const client,
  * @return 0 If successful otherwise a negative error code is returned.
  */
 static int job_update_accepted(struct mqtt_client *const client,
-			       u32_t payload_len)
+			       uint32_t payload_len)
 {
 	int sec_tag = -1;
-	u16_t port = 0;
 	char *apn = NULL;
 	int err = get_published_payload(client, payload_buf, payload_len);
 
@@ -245,23 +250,28 @@ static int job_update_accepted(struct mqtt_client *const client,
 		 * the firmware.
 		 */
 		execution_state = AWS_JOBS_IN_PROGRESS;
-		LOG_INF("Start downloading firmware from %s/%s",
+		LOG_DBG("Start downloading firmware from %s/%s",
 			log_strdup(hostname), log_strdup(file_path));
-#if defined(DOWNLOAD_CLIENT_TLS)
-		sec_tag = CONFIG_AWS_FOTA_DOWNLOAD_SECURITY_TAG
+#if defined(CONFIG_AWS_FOTA_DOWNLOAD_SECURITY_TAG)
+		sec_tag = CONFIG_AWS_FOTA_DOWNLOAD_SECURITY_TAG;
 #endif
 
-		err = fota_download_start(hostname, file_path, sec_tag, port,
-					  apn);
+		err = fota_download_start(hostname, file_path, sec_tag, apn, 0);
 		if (err) {
 			LOG_ERR("Error (%d) when trying to start firmware "
 				"download", err);
-			return err;
+			execution_state = AWS_JOBS_FAILED;
+			err = update_job_execution(client, job_id,
+						   execution_state, "");
+			if (err) {
+				return err;
+			}
+
 		}
 		callback(&aws_fota_evt);
 	} else if (execution_state == AWS_JOBS_IN_PROGRESS
 		   && fota_state == APPLY_UPDATE) {
-		LOG_INF("Firmware download completed");
+		LOG_DBG("Firmware download completed");
 		execution_state = AWS_JOBS_SUCCEEDED;
 		err = update_job_execution(client, job_id, execution_state, "");
 		if (err) {
@@ -274,8 +284,12 @@ static int job_update_accepted(struct mqtt_client *const client,
 			.id = AWS_FOTA_EVT_DONE };
 
 		callback(&aws_fota_evt);
-		LOG_INF("Job document updated with SUCCEDED");
-		LOG_INF("Ready to reboot");
+		LOG_DBG("Job document updated with SUCCEDED");
+		LOG_DBG("Ready to reboot");
+	} else if (execution_state == AWS_JOBS_FAILED) {
+		fota_state = NONE;
+		execution_state = AWS_JOBS_QUEUED;
+		accepted = false;
 	}
 	return 0;
 }
@@ -291,7 +305,7 @@ static int job_update_accepted(struct mqtt_client *const client,
  */
 
 static int job_update_rejected(struct mqtt_client *const client,
-			       u32_t payload_len)
+			       uint32_t payload_len)
 {
 	struct aws_fota_event aws_fota_evt = { .id = AWS_FOTA_EVT_ERROR };
 	LOG_ERR("Job document update was rejected");
@@ -321,9 +335,9 @@ static int job_update_rejected(struct mqtt_client *const client,
  *	     code is returned.
  */
 static int on_publish_evt(struct mqtt_client *const client,
-				   const u8_t *topic,
-				   u32_t topic_len,
-				   u32_t payload_len)
+				   const uint8_t *topic,
+				   uint32_t topic_len,
+				   uint32_t payload_len)
 {
 	bool is_get_next_topic =
 		aws_jobs_cmp(get_topic, topic, topic_len, "");
@@ -343,9 +357,31 @@ static int on_publish_evt(struct mqtt_client *const client,
 	debug_log[topic_len] = '\0';
 	LOG_DBG("Received topic: %s", log_strdup(debug_log));
 #endif
+	if (is_notify_next_topic) {
+		if (fota_state == NONE) {
+			LOG_DBG("Checking for an available job");
 
-	if (is_notify_next_topic || is_get_next_topic || is_get_accepted) {
-		LOG_INF("Checking for an available job");
+			return get_job_execution(client, payload_len);
+		}
+
+		/* If we get here, a job is already being handled. The incoming
+		 * message is most likely a duplicate and must be dropped
+		 * to not interfere with the job being processed.
+		 * The payload must still be read out in order to clear the
+		 * MQTT buffer for next incoming message.
+		 */
+		int err = get_published_payload(client, payload_buf, payload_len);
+
+		if (err) {
+			LOG_ERR("Error when getting the payload: %d", err);
+			return err;
+		}
+
+		LOG_DBG("FOTA already in progress, message is ignored");
+
+		return 0;
+	} else if (is_get_next_topic || is_get_accepted) {
+		LOG_DBG("Checking for an available job");
 		return get_job_execution(client, payload_len);
 	} else if (doc_update_accepted) {
 		return job_update_accepted(client, payload_len);
@@ -375,7 +411,8 @@ int aws_fota_mqtt_evt_handler(struct mqtt_client *const client,
 			return 1;
 		}
 
-		if (!evt->param.connack.session_present_flag) {
+		if (IS_ENABLED(CONFIG_MQTT_CLEAN_SESSION) ||
+		    !evt->param.connack.session_present_flag) {
 			err = aws_jobs_subscribe_topic_notify_next(client,
 							     notify_next_topic);
 			if (err) {
@@ -400,7 +437,7 @@ int aws_fota_mqtt_evt_handler(struct mqtt_client *const client,
 				LOG_ERR("Error when creating topic: %d", err);
 				return err;
 			}
-			LOG_INF("Created notify_next_topic %s",
+			LOG_DBG("Created notify_next_topic %s",
 				log_strdup(notify_next_topic));
 
 			err = aws_jobs_create_topic_get(client, "$next",
@@ -409,9 +446,9 @@ int aws_fota_mqtt_evt_handler(struct mqtt_client *const client,
 				LOG_ERR("Error when creating topic: %d", err);
 				return err;
 			}
-			LOG_INF("Created get_topic %s", log_strdup(get_topic));
+			LOG_DBG("Created get_topic %s", log_strdup(get_topic));
 
-			LOG_INF("previously subscribed to notify-next topic");
+			LOG_DBG("previously subscribed to notify-next topic");
 			err = aws_jobs_get_job_execution(client, "$next",
 							 get_topic);
 			if (err) {
@@ -470,7 +507,7 @@ int aws_fota_mqtt_evt_handler(struct mqtt_client *const client,
 			return evt->result;
 		}
 		if (evt->param.suback.message_id == SUBSCRIBE_NOTIFY_NEXT) {
-			LOG_INF("subscribed to notify-next topic");
+			LOG_DBG("subscribed to notify-next topic");
 			err = aws_jobs_get_job_execution(client, "$next",
 							 get_topic);
 			if (err) {
@@ -480,7 +517,7 @@ int aws_fota_mqtt_evt_handler(struct mqtt_client *const client,
 		}
 
 		if (evt->param.suback.message_id == SUBSCRIBE_GET) {
-			LOG_INF("subscribed to get topic");
+			LOG_DBG("subscribed to get topic");
 			return 0;
 		}
 
@@ -512,7 +549,7 @@ static void http_fota_handler(const struct fota_download_evt *evt)
 
 	switch (evt->id) {
 	case FOTA_DOWNLOAD_EVT_FINISHED:
-		LOG_INF("FOTA download completed evt received");
+		LOG_DBG("FOTA download completed evt received");
 
 		/* Always send download complete progress */
 		aws_fota_evt.id = AWS_FOTA_EVT_DL_PROGRESS;
@@ -578,7 +615,7 @@ int aws_fota_init(struct mqtt_client *const client,
 	return 0;
 }
 
-int aws_fota_get_job_id(u8_t *const job_id_buf, size_t buf_size)
+int aws_fota_get_job_id(uint8_t *const job_id_buf, size_t buf_size)
 {
 	if ((job_id_buf == NULL) || (buf_size == 0)) {
 		return -EINVAL;

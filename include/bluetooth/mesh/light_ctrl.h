@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 /** @file
@@ -84,42 +84,6 @@ enum bt_mesh_light_ctrl_prop {
 	BT_MESH_LIGHT_CTRL_PROP_REG_ACCURACY =
 		BT_MESH_PROP_ID_LIGHT_CTRL_REG_ACCURACY,
 
-	/** Regulator downwards integral coeffient (Kid).
-	 *
-	 *  - Unit: Unitless
-	 *  - Encoding: 32 bit floating point.
-	 *  - Range: 0 to 1000.0
-	 */
-	BT_MESH_LIGHT_CTRL_PROP_REG_KID =
-		BT_MESH_PROP_ID_LIGHT_CTRL_REG_KID,
-
-	/** Regulator upwards integral coeffient (Kiu).
-	 *
-	 *  - Unit: Unitless
-	 *  - Encoding: 32 bit floating point.
-	 *  - Range: 0 to 1000.0
-	 */
-	BT_MESH_LIGHT_CTRL_PROP_REG_KIU =
-		BT_MESH_PROP_ID_LIGHT_CTRL_REG_KIU,
-
-	/** Regulator downwards proportional coeffient (Kpd).
-	 *
-	 *  - Unit: Unitless
-	 *  - Encoding: 32 bit floating point.
-	 *  - Range: 0 to 1000.0
-	 */
-	BT_MESH_LIGHT_CTRL_PROP_REG_KPD =
-		BT_MESH_PROP_ID_LIGHT_CTRL_REG_KPD,
-
-	/** Regulator upwards proportional coeffient (Kpu).
-	 *
-	 *  - Unit: Unitless
-	 *  - Encoding: 32 bit floating point.
-	 *  - Range: 0 to 1000.0
-	 */
-	BT_MESH_LIGHT_CTRL_PROP_REG_KPU =
-		BT_MESH_PROP_ID_LIGHT_CTRL_REG_KPU,
-
 	/** Fade time for fading to the Prolong state.
 	 *
 	 *  - Unit: Seconds
@@ -184,6 +148,41 @@ enum bt_mesh_light_ctrl_prop {
 		BT_MESH_PROP_ID_LIGHT_CTRL_TIME_RUN_ON,
 };
 
+/** Light Control Regulator Coefficients */
+enum bt_mesh_light_ctrl_coeff {
+	/** Regulator downwards integral coeffient (Kid).
+	 *
+	 *  - Unit: Unitless
+	 *  - Encoding: 32 bit floating point.
+	 *  - Range: 0 to 1000.0
+	 */
+	BT_MESH_LIGHT_CTRL_COEFF_KID = BT_MESH_PROP_ID_LIGHT_CTRL_REG_KID,
+
+	/** Regulator upwards integral coeffient (Kiu).
+	 *
+	 *  - Unit: Unitless
+	 *  - Encoding: 32 bit floating point.
+	 *  - Range: 0 to 1000.0
+	 */
+	BT_MESH_LIGHT_CTRL_COEFF_KIU = BT_MESH_PROP_ID_LIGHT_CTRL_REG_KIU,
+
+	/** Regulator downwards proportional coeffient (Kpd).
+	 *
+	 *  - Unit: Unitless
+	 *  - Encoding: 32 bit floating point.
+	 *  - Range: 0 to 1000.0
+	 */
+	BT_MESH_LIGHT_CTRL_COEFF_KPD = BT_MESH_PROP_ID_LIGHT_CTRL_REG_KPD,
+
+	/** Regulator upwards proportional coeffient (Kpu).
+	 *
+	 *  - Unit: Unitless
+	 *  - Encoding: 32 bit floating point.
+	 *  - Range: 0 to 1000.0
+	 */
+	BT_MESH_LIGHT_CTRL_COEFF_KPU = BT_MESH_PROP_ID_LIGHT_CTRL_REG_KPU,
+};
+
 /** @cond INTERNAL_HIDDEN */
 #define BT_MESH_LIGHT_CTRL_OP_MODE_GET BT_MESH_MODEL_OP_2(0x82, 0x91)
 #define BT_MESH_LIGHT_CTRL_OP_MODE_SET BT_MESH_MODEL_OP_2(0x82, 0x92)
@@ -202,19 +201,6 @@ enum bt_mesh_light_ctrl_prop {
 #define BT_MESH_LIGHT_CTRL_OP_PROP_SET BT_MESH_MODEL_OP_1(0x62)
 #define BT_MESH_LIGHT_CTRL_OP_PROP_SET_UNACK BT_MESH_MODEL_OP_1(0x63)
 #define BT_MESH_LIGHT_CTRL_OP_PROP_STATUS BT_MESH_MODEL_OP_1(0x64)
-
-#define BT_MESH_LIGHT_CTRL_CLI_BUF_MAXLEN                                      \
-	(BT_MESH_MODEL_BUF_LEN(                                                \
-		BT_MESH_LIGHT_CTRL_OP_PROP_SET,                                \
-		2 + CONFIG_BT_MESH_SENSOR_CHANNEL_ENCODED_SIZE_MAX))
-
-#define BT_MESH_LIGHT_CTRL_SRV_BUF_MAXLEN                                      \
-	(BT_MESH_MODEL_BUF_LEN(BT_MESH_LIGHT_CTRL_OP_LIGHT_ONOFF_STATUS, 3))
-
-#define BT_MESH_LIGHT_CTRL_SETUP_SRV_BUF_MAXLEN                                \
-	(BT_MESH_MODEL_BUF_LEN(                                                \
-		BT_MESH_LIGHT_CTRL_OP_PROP_STATUS,                             \
-		2 + CONFIG_BT_MESH_SENSOR_CHANNEL_ENCODED_SIZE_MAX))
 
 #if CONFIG_BT_MESH_LIGHT_CTRL_SRV_REG
 #define BT_MESH_LIGHT_CTRL_SRV_REG_INIT .reg = {                               \

@@ -3,6 +3,10 @@
 Cryptography tests
 ##################
 
+.. contents::
+   :local:
+   :depth: 2
+
 Cryptography tests verify the functionality of the :ref:`nrfxlib:nrf_security` by using known test vectors approved by the National Institute of Standards and Technology (NIST) and others.
 
 Overview
@@ -121,13 +125,11 @@ See :option:`CONFIG_NORDIC_SECURITY_BACKEND`.
 Requirements
 ************
 
-* One of the following development boards:
+The tests support the following development kits:
 
-  * |nRF9160DK|
-  * |nRF5340DK|
-  * |nRF52840DK|
-  * |nRF52DK|
-  * |nRF51DK|
+.. table-from-rows:: /includes/sample_board_rows.txt
+   :header: heading
+   :rows: nrf9160dk_nrf9160ns, nrf52840dk_nrf52840
 
 .. note::
    Nordic devices such as nRF51, nRF52810, or nRF52811 cannot run the full test suite because of limited flash capacity.
@@ -166,7 +168,7 @@ Testing
 =======
 
 1. Compile and program the application.
-#. Observe the result of the different test vectors in the log using `RTT Viewer`_ or a terminal emulator.
+#. Observe the result of the different test vectors in the log using :ref:`RTT Viewer <zephyr:nordic_segger>` or a terminal emulator.
    The last line of the output indicates the test result::
 
       PROJECT EXECUTION SUCCESSFUL
@@ -292,7 +294,7 @@ Test vectors
 A test vector is a set of inputs and expected outputs to verify the functionality provided in a test case::
 
    typedef const struct {
-	   const u32_t digest_type;        /**< Digest type of HMAC operation. */
+	   const uint32_t digest_type;        /**< Digest type of HMAC operation. */
 	   const int expected_err_code;    /**< Expected error code from HMAC operation. */
 	   const uint8_t expected_result;  /**< Expected result of HMAC operation. */
 	   const char *p_test_vector_name; /**< Pointer to HMAC test vector name. */

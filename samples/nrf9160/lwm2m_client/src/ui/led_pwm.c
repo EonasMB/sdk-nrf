@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <zephyr.h>
@@ -19,13 +19,13 @@ LOG_MODULE_REGISTER(ui_led_pwm, CONFIG_UI_LOG_LEVEL);
 #define PWM_PIN(channel) DT_PROP(PWM_NODE, ch##channel##_pin)
 
 struct led {
-	struct device *pwm_dev;
+	const struct device *pwm_dev;
 
 	size_t id;
 	struct led_color color;
 	const struct led_effect *effect;
-	u16_t effect_step;
-	u16_t effect_substep;
+	uint16_t effect_step;
+	uint16_t effect_substep;
 
 	struct k_delayed_work work;
 };
@@ -55,13 +55,13 @@ static const struct led_effect effect[] = {
 	[UI_LED_ERROR_CLOUD] = LED_EFFECT_LED_BREATHE(UI_LED_ON_PERIOD_ERROR,
 					UI_LED_OFF_PERIOD_ERROR,
 					UI_LED_ERROR_CLOUD_COLOR),
-	[UI_LED_ERROR_BSD_REC] = LED_EFFECT_LED_BREATHE(UI_LED_ON_PERIOD_ERROR,
+	[UI_LED_ERROR_MODEM_REC] = LED_EFFECT_LED_BREATHE(UI_LED_ON_PERIOD_ERROR,
 					UI_LED_OFF_PERIOD_ERROR,
-					UI_LED_ERROR_BSD_REC_COLOR),
-	[UI_LED_ERROR_BSD_IRREC] = LED_EFFECT_LED_BREATHE(
+					UI_LED_ERROR_MODEM_REC_COLOR),
+	[UI_LED_ERROR_MODEM_IRREC] = LED_EFFECT_LED_BREATHE(
 					UI_LED_ON_PERIOD_ERROR,
 					UI_LED_OFF_PERIOD_ERROR,
-					UI_LED_ERROR_BSD_IRREC_COLOR),
+					UI_LED_ERROR_MODEM_IRREC_COLOR),
 	[UI_LED_ERROR_LTE_LC] = LED_EFFECT_LED_BREATHE(UI_LED_ON_PERIOD_ERROR,
 					UI_LED_OFF_PERIOD_ERROR,
 					UI_LED_ERROR_LTE_LC_COLOR),
@@ -127,7 +127,7 @@ static void work_handler(struct k_work *work)
 	}
 
 	if (leds.effect_step < leds.effect->step_count) {
-		s32_t next_delay =
+		int32_t next_delay =
 			leds.effect->steps[leds.effect_step].substep_time;
 
 		k_delayed_work_submit(&leds.work, next_delay);
@@ -149,7 +149,7 @@ static void led_update(struct led *led)
 	__ASSERT_NO_MSG(led->effect->steps);
 
 	if (led->effect->step_count > 0) {
-		s32_t next_delay =
+		int32_t next_delay =
 			led->effect->steps[led->effect_step].substep_time;
 
 		k_delayed_work_submit(&led->work, next_delay);
@@ -211,7 +211,7 @@ void ui_led_set_effect(enum ui_led_pattern state)
 	led_update(&leds);
 }
 
-int ui_led_set_rgb(u8_t red, u8_t green, u8_t blue)
+int ui_led_set_rgb(uint8_t red, uint8_t green, uint8_t blue)
 {
 	struct led_effect effect =
 		LED_EFFECT_LED_BREATHE(UI_LED_ON_PERIOD_NORMAL,

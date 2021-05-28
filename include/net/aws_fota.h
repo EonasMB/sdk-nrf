@@ -1,7 +1,7 @@
 /*
  *Copyright (c) 2019 Nordic Semiconductor ASA
  *
- *SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ *SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 /**@file
@@ -83,7 +83,7 @@ int aws_fota_mqtt_evt_handler(struct mqtt_client *const client,
  * @return Length of the job id string (not counting the terminating
  *         null character) or a negative value on error.
  */
-int aws_fota_get_job_id(u8_t *const job_id_buf, size_t buf_size);
+int aws_fota_get_job_id(uint8_t *const job_id_buf, size_t buf_size);
 
 #ifdef __cplusplus
 }

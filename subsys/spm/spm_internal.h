@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #ifndef SPM_INTERNAL_H__
@@ -11,6 +11,7 @@
 #include <nrfx.h>
 #include <sys/util.h>
 #include <sys/__assert.h>
+#include <nrf_erratas.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,31 +33,10 @@ extern "C" {
 /* SPU FLASH regions */
 #if (defined(CONFIG_SOC_NRF5340_CPUAPP) \
 	&& defined(CONFIG_NRF5340_CPUAPP_ERRATUM19))
-static inline u32_t spu_flash_region_size(void)
-{
-	if (NRF_FICR->INFO.PART == 0x5340) {
-		if (NRF_FICR->INFO.VARIANT == 0x41414142) {
-			return 32*1024;
-		}
-		return 16*1024;
-	}
-	__ASSERT(false, "Function should only be called on an nRF53 device.");
-	return 0;
-}
 
-static inline u32_t num_spu_flash_regions(void)
-{
-	if (NRF_FICR->INFO.PART == 0x5340) {
-		if (NRF_FICR->INFO.VARIANT == 0x41414142) {
-			return 32;
-		}
-		return 64;
-	}
-	__ASSERT(false, "Function should only be called on an nRF53 device.");
-	return 0;
-}
-#define FLASH_SECURE_ATTRIBUTION_REGION_SIZE spu_flash_region_size()
-#define NUM_FLASH_SECURE_ATTRIBUTION_REGIONS num_spu_flash_regions()
+#define FLASH_SECURE_ATTRIBUTION_REGION_SIZE \
+				(nrf53_errata_19() ? 32*1024 : 16*1024)
+#define NUM_FLASH_SECURE_ATTRIBUTION_REGIONS (nrf53_errata_19() ? 32 : 64)
 #else
 
 #define SOC_NV_FLASH_NODE DT_INST(0, soc_nv_flash)
@@ -154,7 +134,7 @@ static inline u32_t num_spu_flash_regions(void)
 	SPU_FLASHNSC_REGION_REGION_Msk)
 
 #define FLASH_NSC_REGION_FROM_ADDR(addr)                                       \
-	FLASH_NSC_REGION(((u32_t)addr / FLASH_SECURE_ATTRIBUTION_REGION_SIZE))
+	FLASH_NSC_REGION(((uint32_t)addr / FLASH_SECURE_ATTRIBUTION_REGION_SIZE))
 
 #define FLASH_NSC_REGION_LOCK                                                  \
 	((SPU_FLASHNSC_REGION_LOCK_Locked << SPU_FLASHNSC_REGION_LOCK_Pos) &   \
@@ -169,7 +149,7 @@ static inline u32_t num_spu_flash_regions(void)
 	SPU_FLASHNSC_SIZE_LOCK_Msk)
 
 #define FLASH_NSC_SIZE_FROM_ADDR(addr) FLASH_SECURE_ATTRIBUTION_REGION_SIZE    \
-	- (((u32_t)(addr)) % FLASH_SECURE_ATTRIBUTION_REGION_SIZE)
+	- (((uint32_t)(addr)) % FLASH_SECURE_ATTRIBUTION_REGION_SIZE)
 
 #define FLASH_NSC_SIZE_REG(size) FLASH_NSC_SIZE((size) / FLASH_NSC_MIN_SIZE)
 

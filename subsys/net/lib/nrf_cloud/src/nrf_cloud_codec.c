@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2017 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include "nrf_cloud_codec.h"
@@ -233,7 +233,9 @@ int nrf_cloud_decode_requested_state(const struct nrf_cloud_data *input,
 
 	if (!pairing_state_obj || pairing_state_obj->type != cJSON_String) {
 		if (cJSON_HasObjectItem(desired_obj, "config") == false) {
-			LOG_DBG("No valid state found!");
+			LOG_WRN("Unhandled data received from nRF Cloud.");
+			LOG_INF("Ensure device firmware is up to date.");
+			LOG_INF("Delete and re-add device to nRF Cloud if problem persists.");
 		}
 		cJSON_Delete(root_obj);
 		return -ENOENT;
@@ -244,7 +246,7 @@ int nrf_cloud_decode_requested_state(const struct nrf_cloud_data *input,
 	if (compare(state_str, DUA_PIN_STR)) {
 		(*requested_state) = STATE_UA_PIN_WAIT;
 	} else {
-		LOG_ERR("Deprecated state. Delete device from nrfCloud and update device with JITP certificates.");
+		LOG_ERR("Deprecated state. Delete device from nRF Cloud and update device with JITP certificates.");
 		cJSON_Delete(root_obj);
 		return -ENOTSUP;
 	}
@@ -336,7 +338,7 @@ int nrf_cloud_encode_config_response(struct nrf_cloud_data const *const input,
 	return 0;
 }
 
-int nrf_cloud_encode_state(u32_t reported_state, struct nrf_cloud_data *output)
+int nrf_cloud_encode_state(uint32_t reported_state, struct nrf_cloud_data *output)
 {
 	int ret;
 
@@ -346,13 +348,16 @@ int nrf_cloud_encode_state(u32_t reported_state, struct nrf_cloud_data *output)
 	cJSON *state_obj = cJSON_CreateObject();
 	cJSON *reported_obj = cJSON_CreateObject();
 	cJSON *pairing_obj = cJSON_CreateObject();
+	cJSON *connection_obj = cJSON_CreateObject();
 
 	if ((root_obj == NULL) || (state_obj == NULL) ||
-	    (reported_obj == NULL) || (pairing_obj == NULL)) {
+	    (reported_obj == NULL) || (pairing_obj == NULL) ||
+	    (connection_obj == NULL)) {
 		cJSON_Delete(root_obj);
 		cJSON_Delete(state_obj);
 		cJSON_Delete(reported_obj);
 		cJSON_Delete(pairing_obj);
+		cJSON_Delete(connection_obj);
 
 		return -ENOMEM;
 	}
@@ -367,6 +372,7 @@ int nrf_cloud_encode_state(u32_t reported_state, struct nrf_cloud_data *output)
 		ret += json_add_null(reported_obj, "stage");
 		ret += json_add_null(reported_obj,
 				     "nrfcloud_mqtt_topic_prefix");
+		ret += json_add_null(connection_obj, "keepalive");
 		break;
 	}
 	case STATE_UA_PIN_COMPLETE: {
@@ -384,6 +390,12 @@ int nrf_cloud_encode_state(u32_t reported_state, struct nrf_cloud_data *output)
 		ret += json_add_null(pairing_obj, "config");
 		ret += json_add_null(reported_obj, "pairingStatus");
 
+		/* Report keepalive value. */
+		if (cJSON_AddNumberToObject(connection_obj, "keepalive",
+					    CONFIG_MQTT_KEEPALIVE) == NULL) {
+			ret = -ENOMEM;
+		}
+
 		/* Report pairing topics. */
 		cJSON *topics_obj = cJSON_CreateObject();
 
@@ -392,6 +404,7 @@ int nrf_cloud_encode_state(u32_t reported_state, struct nrf_cloud_data *output)
 			cJSON_Delete(state_obj);
 			cJSON_Delete(reported_obj);
 			cJSON_Delete(pairing_obj);
+			cJSON_Delete(connection_obj);
 
 			return -ENOMEM;
 		}
@@ -410,11 +423,13 @@ int nrf_cloud_encode_state(u32_t reported_state, struct nrf_cloud_data *output)
 		cJSON_Delete(state_obj);
 		cJSON_Delete(reported_obj);
 		cJSON_Delete(pairing_obj);
+		cJSON_Delete(connection_obj);
 		return -ENOTSUP;
 	}
 	}
 
 	ret += json_add_obj(reported_obj, "pairing", pairing_obj);
+	ret += json_add_obj(reported_obj, "connection", connection_obj);
 	ret += json_add_obj(state_obj, "reported", reported_obj);
 	ret += json_add_obj(root_obj, "state", state_obj);
 
@@ -423,6 +438,7 @@ int nrf_cloud_encode_state(u32_t reported_state, struct nrf_cloud_data *output)
 		cJSON_Delete(state_obj);
 		cJSON_Delete(reported_obj);
 		cJSON_Delete(pairing_obj);
+		cJSON_Delete(connection_obj);
 
 		return -ENOMEM;
 	}

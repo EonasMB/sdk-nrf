@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include "passkey_buttons.h"
@@ -15,12 +15,12 @@
  */
 const struct {} passkey_buttons_def_include_once;
 
-const static u16_t confirm_keys[] = {
+const static uint16_t confirm_keys[] = {
 	KEY_ID(0x04, 0x0A),   /* enter */
 	KEY_ID(0x02, 0x0E),   /* keypad enter */
 };
 
-const static u16_t delete_keys[] = {
+const static uint16_t delete_keys[] = {
 	KEY_ID(0x01, 0x0A),   /* backspace */
 };
 

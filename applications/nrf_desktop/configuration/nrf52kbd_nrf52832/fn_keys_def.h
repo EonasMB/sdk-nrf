@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include "key_id.h"
@@ -15,7 +15,7 @@
  */
 const struct {} fn_key_def_include_once;
 
-static const u16_t fn_keys[] = {
+static const uint16_t fn_keys[] = {
 	KEY_ID(0x01, 0x03), /* f3 -> e-mail */
 	KEY_ID(0x03, 0x01), /* esc -> fn lock */
 	KEY_ID(0x03, 0x03), /* f4 -> calculator */

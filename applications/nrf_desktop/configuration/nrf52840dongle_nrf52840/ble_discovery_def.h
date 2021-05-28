@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 /* This configuration file defines discovery parameters for BLE central.
@@ -16,11 +16,11 @@ const struct {} ble_discovery_include_once;
 #include "ble_event.h"
 
 struct bt_peripheral {
-	u16_t pid;
+	uint16_t pid;
 	enum peer_type peer_type;
 };
 
-static const u16_t vendor_vid = 0x1915;
+static const uint16_t vendor_vid = 0x1915;
 
 /* Peripherals parameters. */
 static const struct bt_peripheral bt_peripherals[] = {

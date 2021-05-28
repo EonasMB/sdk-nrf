@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #ifndef _UART_DATA_EVENT_H_
@@ -26,8 +26,8 @@ extern "C" {
 struct uart_data_event {
 	struct event_header header;
 
-	u8_t dev_idx;
-	u8_t *buf;
+	uint8_t dev_idx;
+	uint8_t *buf;
 	size_t len;
 };
 

@@ -1,14 +1,14 @@
 /*
  * Copyright (c) 2018 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <string.h>
 #include <errno.h>
 #include <nfc/ndef/uri_rec.h>
 
-const u8_t nfc_ndef_uri_rec_type = 'U'; /**< URI Record type. */
+const uint8_t nfc_ndef_uri_rec_type = 'U'; /**< URI Record type. */
 
 /**
  * @brief Function for constructing the payload for a URI record.
@@ -28,8 +28,8 @@ const u8_t nfc_ndef_uri_rec_type = 'U'; /**< URI Record type. */
  * buffer space.
  */
 int nfc_ndef_uri_rec_payload_encode(struct nfc_ndef_uri_rec_payload *input,
-				    u8_t *buff,
-				    u32_t *len)
+				    uint8_t *buff,
+				    uint32_t *len)
 {
 	if (buff) {
 		/* Verify if there is enough available memory */

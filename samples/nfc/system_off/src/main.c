@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <stdio.h>
@@ -39,7 +39,7 @@ static struct k_delayed_work system_off_work;
  */
 static void nfc_callback(void *context,
 			 enum nfc_t2t_event event,
-			 const u8_t *data,
+			 const uint8_t *data,
 			 size_t data_length)
 {
 	ARG_UNUSED(context);
@@ -70,13 +70,13 @@ static void nfc_callback(void *context,
 static int start_nfc(void)
 {
 	/* Text message in its language code. */
-	static const u8_t en_payload[] = {
+	static const uint8_t en_payload[] = {
 		'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd', '!'
 	};
-	static const u8_t en_code[] = {'e', 'n'};
+	static const uint8_t en_code[] = {'e', 'n'};
 
 	/* Buffer used to hold an NFC NDEF message. */
-	static u8_t buffer[NDEF_MSG_BUF_SIZE];
+	static uint8_t buffer[NDEF_MSG_BUF_SIZE];
 
 	NFC_NDEF_TEXT_RECORD_DESC_DEF(nfc_text_rec,
 				      UTF_8,
@@ -87,7 +87,7 @@ static int start_nfc(void)
 
 	NFC_NDEF_MSG_DEF(nfc_text_msg, MAX_REC_COUNT);
 
-	u32_t len = sizeof(buffer);
+	uint32_t len = sizeof(buffer);
 
 	/* Set up NFC */
 	if (nfc_t2t_setup(nfc_callback, NULL) < 0) {
@@ -137,7 +137,7 @@ static void system_off(struct k_work *work)
 	/* Before we disabled entry to deep sleep. Here we need to override
 	 * that, then force a sleep so that the deep sleep takes effect.
 	 */
-	sys_pm_force_power_state(SYS_POWER_STATE_DEEP_SLEEP_1);
+	pm_power_state_force(POWER_STATE_DEEP_SLEEP_1);
 
 	dk_set_led_off(SYSTEM_ON_LED);
 
@@ -161,7 +161,7 @@ static void system_off(struct k_work *work)
  */
 static void print_reset_reason(void)
 {
-	u32_t reas;
+	uint32_t reas;
 
 #if NRF_POWER_HAS_RESETREAS
 
@@ -222,7 +222,7 @@ void main(void)
 	}
 
 	/* Prevent deep sleep (system off) from being entered */
-	sys_pm_ctrl_disable_state(SYS_POWER_STATE_DEEP_SLEEP_1);
+	pm_ctrl_disable_state(POWER_STATE_DEEP_SLEEP_1);
 
 	/* Exit main function - the rest will be done by the callbacks */
 }

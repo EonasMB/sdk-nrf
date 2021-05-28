@@ -3,13 +3,14 @@
 Sensor models
 #############
 
-The :ref:`bt_mesh_sensors_readme` are accessed through the Sensor models.
+The Sensor models allow remote access to :ref:`bt_mesh_sensors_readme`.
 
-There are two Sensor models:
+The Sensor models only use native types, and have no common model-specific types.
 
 .. toctree::
    :maxdepth: 1
    :glob:
+   :caption: Subpages:
 
    sensor_srv.rst
    sensor_cli.rst

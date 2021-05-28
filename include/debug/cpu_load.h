@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 #ifndef __CPU_LOAD_H
 #define __CPU_LOAD_H
@@ -44,7 +44,7 @@ void cpu_load_reset(void);
  *
  * @return The current CPU load value.
  */
-u32_t cpu_load_get(void);
+uint32_t cpu_load_get(void);
 
 /** @} */
 

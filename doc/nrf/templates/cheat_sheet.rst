@@ -5,6 +5,10 @@
 Cheat Sheet
 ###########
 
+.. contents::
+   :local:
+   :depth: 2
+
 This topic is not meant to be included in the output, but to serve as reference for common RST syntax and linking between doc sets.
 
 RST syntax
@@ -133,6 +137,10 @@ We can create more complex tables as ASCII art:
    * - Gannet Ripple
      - 1.99
      - On a stick!
+   * - Line-break example
+     - x
+     - | First line
+       | Second line
 
 .. csv-table:: Frozen Delights!
    :header: "Treat", "Quantity", "Description"
@@ -143,24 +151,31 @@ We can create more complex tables as ASCII art:
    crunchy, now would it?"
    "Gannet Ripple", 1.99, "On a stick!"
 
+To force line-breaks in a table, use a line block:
+
+| First line
+| Second line
+
 
 Links
 =====
 
-Nulla aliquam lacinia risus `eget congue <http://www.nordicsemi.com>`_. Morbi posuere a nisi id `vulputate`_. Curabitur ac lacus magna. Aliquam urna lacus, ornare non iaculis vel, ullamcorper vel dolor. Nunc vel dui vulputate, imperdiet metus eget, tristique dui. Etiam non lorem vel magna dictum aliquam. Nunc hendrerit facilisis diam, non mollis leo commodo nec.
+Nulla aliquam lacinia risus `eget congue <https://www.nordicsemi.com>`_. Morbi posuere a nisi id `vulputate`_. Curabitur ac lacus magna. Aliquam urna lacus, ornare non iaculis vel, ullamcorper vel dolor. Nunc vel dui vulputate, imperdiet metus eget, tristique dui. Etiam non lorem vel magna dictum aliquam. Nunc hendrerit facilisis diam, non mollis leo commodo nec.
 
-.. _vulputate: http://www.nordicsemi.com
+.. _vulputate: https://www.nordicsemi.com
 
-www.nordicsemi.com http://www.nordicsemi.com
+www.nordicsemi.com https://www.nordicsemi.com
 
 :ref:`tables`
 
-`override <tables>`_
+`override <tables_>`_
 
 :ref:`Overriding link text <table>`
 
 Use :ref: to link to IDs and :doc: to link to files.
 
+If you have a link ID in :file:`links.txt` that consists of only one word, you cannot have a heading anywhere that is the same.
+If you do, you'll get an error about a duplicate ID in :file:`links.txt`.
 
 Images
 ======
@@ -305,8 +320,8 @@ See `the breathe documentation <https://breathe.readthedocs.io/en/latest/directi
 
 To link to doxygen macros, enums or functions use:
 
-* :c:macro:`BT_GATT_HIDS_INFORMATION_LEN`
-* :cpp:func:`bt_gatt_hids_init`
+* :c:macro:`BT_HIDS_INFORMATION_LEN`
+* :c:func:`bt_hids_init`
 
 Linked RST project
 ==================

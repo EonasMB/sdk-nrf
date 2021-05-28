@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <zephyr.h>
@@ -22,8 +22,8 @@ static struct k_work_q *env_sensors_work_q;
 struct env_sensor {
 	env_sensor_data_t sensor;
 	enum sensor_channel channel;
-	u8_t *dev_name;
-	struct device *dev;
+	uint8_t *dev_name;
+	const struct device *dev;
 	struct k_spinlock lock;
 };
 
@@ -63,15 +63,15 @@ static struct env_sensor *env_sensors[] = {
 
 static struct k_delayed_work env_sensors_poller;
 static env_sensors_data_ready_cb data_ready_cb;
-static u32_t data_send_interval_s = CONFIG_ENVIRONMENT_DATA_SEND_INTERVAL;
+static uint32_t data_send_interval_s = CONFIG_ENVIRONMENT_DATA_SEND_INTERVAL;
 static bool backoff_enabled;
 static bool initialized;
 
-static inline int submit_poll_work(const u32_t delay_s)
+static inline int submit_poll_work(const uint32_t delay_s)
 {
 	return k_delayed_work_submit_to_queue(env_sensors_work_q,
 					      &env_sensors_poller,
-					      K_SECONDS((u32_t)delay_s));
+					      K_SECONDS((uint32_t)delay_s));
 }
 
 int env_sensors_poll(void)
@@ -116,6 +116,7 @@ static void env_sensors_poll_fn(struct k_work *work)
 			k_spinlock_key_t key = k_spin_lock(&(env_sensors[i]->lock));
 
 			env_sensors[i]->sensor.value = sensor_value_to_double(&data[i]);
+			env_sensors[i]->sensor.ts = k_uptime_get();
 			k_spin_unlock(&(env_sensors[i]->lock), key);
 		}
 	}
@@ -198,7 +199,7 @@ int env_sensors_get_air_quality(env_sensor_data_t *sensor_data)
 	return -1;
 }
 
-void env_sensors_set_send_interval(const u32_t interval_s)
+void env_sensors_set_send_interval(const uint32_t interval_s)
 {
 	if (interval_s == data_send_interval_s) {
 		return;
@@ -218,7 +219,7 @@ void env_sensors_set_send_interval(const u32_t interval_s)
 	}
 }
 
-u32_t env_sensors_get_send_interval(void)
+uint32_t env_sensors_get_send_interval(void)
 {
 	return data_send_interval_s;
 }

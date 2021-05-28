@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #ifndef AT_NOTIF_H_
@@ -24,7 +24,7 @@ extern "C" {
 #include <zephyr/types.h>
 
 /**
- * @typedefs at_notif_handler_t
+ * @typedef at_notif_handler_t
  *
  * Because this driver let multiple threads share the same socket, it must make
  * sure that the correct thread gets the correct data returned from the AT

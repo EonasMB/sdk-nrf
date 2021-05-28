@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <stdio.h>
@@ -1101,7 +1101,7 @@ ITEM_REGISTER(test_vector_ecdh_data_random,
 };
 #endif /* MBEDTLS_ECP_DP_SECP256K1_ENABLED */
 
-#if !defined(CONFIG_CRYPTO_LONG_RUNNING_VECTORS_DISABLE)
+#if defined(CONFIG_CRYPTO_TEST_LONG_RUNNING_VECTORS)
 #if defined(MBEDTLS_ECP_DP_BP256R1_ENABLED)
 
 /* ECDH - BP256R1 - Random test vectors */
@@ -1223,4 +1223,4 @@ ITEM_REGISTER(test_vector_ecdh_data_deterministic_full,
 };
 
 #endif /* MBEDTLS_ECP_DP_BP512R1_ENABLED */
-#endif /* CONFIG_CRYPTO_LONG_RUNNING_VECTORS_DISABLE */
+#endif /* CONFIG_CRYPTO_TEST_LONG_RUNNING_VECTORS */

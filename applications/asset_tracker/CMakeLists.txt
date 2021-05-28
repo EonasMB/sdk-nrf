@@ -1,13 +1,10 @@
 #
 # Copyright (c) 2018 Nordic Semiconductor
 #
-# SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
 #
 
-cmake_minimum_required(VERSION 3.8.2)
-
-set(spm_CONF_FILE ${CMAKE_CURRENT_SOURCE_DIR}/spm.conf)
-
+cmake_minimum_required(VERSION 3.13.1)
 
 set(PM_STATIC_YML_FILE
   ${CMAKE_CURRENT_SOURCE_DIR}/configuration/${BOARD}/pm_static.yml
@@ -25,6 +22,7 @@ zephyr_include_directories(src)
 
 # Include application events and configuration headers
 zephyr_library_include_directories(
+  src/motion
   src/orientation_detector
   src/ui
   src/cloud_codec
@@ -34,11 +32,11 @@ zephyr_library_include_directories(
   )
 
 # Application sources
-add_subdirectory(src/motion)
+add_subdirectory_ifdef(CONFIG_MOTION src/motion)
 add_subdirectory(src/ui)
 add_subdirectory(src/cloud_codec)
 add_subdirectory(src/gps_controller)
-add_subdirectory(src/env_sensors)
+add_subdirectory_ifdef(CONFIG_ENVIRONMENT_SENSORS src/env_sensors)
 add_subdirectory_ifdef(CONFIG_WATCHDOG src/watchdog)
 add_subdirectory_ifdef(CONFIG_LIGHT_SENSOR src/light_sensor)
 

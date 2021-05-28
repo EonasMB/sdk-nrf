@@ -1,10 +1,10 @@
 #
 # Copyright (c) 2018 - 2019 Nordic Semiconductor
 #
-# SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
 #
 
-cmake_minimum_required(VERSION 3.8.2)
+cmake_minimum_required(VERSION 3.13.1)
 
 
 if (NOT CMAKE_BUILD_TYPE)
@@ -54,10 +54,12 @@ project("nRF52 Desktop"
 
 assert(CONFIG_DESKTOP_HID_REPORT_DESC "HID report descriptor file must be specified")
 
+# NORDIC SDK APP START
 target_sources(app PRIVATE
   src/main.c
   ${CONFIG_DESKTOP_HID_REPORT_DESC}
   )
+# NORDIC SDK APP END
 
 # Include application events and configuration headers
 zephyr_library_include_directories(

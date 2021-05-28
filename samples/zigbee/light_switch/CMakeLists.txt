@@ -1,7 +1,7 @@
 #
 # Copyright (c) 2020 Nordic Semiconductor ASA
 #
-# SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
 #
 
 cmake_minimum_required(VERSION 3.13.1)
@@ -14,5 +14,10 @@ project("Light Switch")
 target_sources(app PRIVATE
   src/main.c
 )
+
+target_sources_ifdef(CONFIG_BT_NUS app PRIVATE
+  src/nus_cmd.c
+)
+
 target_include_directories(app PRIVATE include)
 # NORDIC SDK APP END

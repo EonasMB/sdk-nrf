@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #ifndef _BLE_CTRL_EVENT_H_
@@ -24,14 +24,18 @@ extern "C" {
 
 enum ble_ctrl_cmd {
 	BLE_CTRL_ENABLE,
-	BLE_CTRL_DISABLE
+	BLE_CTRL_DISABLE,
+	BLE_CTRL_NAME_UPDATE,
 };
 
-/** Peer connection event. */
+/** BLE control event. */
 struct ble_ctrl_event {
 	struct event_header header;
 
 	enum ble_ctrl_cmd cmd;
+	union {
+		const char *name_update;
+	} param;
 };
 
 EVENT_TYPE_DECLARE(ble_ctrl_event);

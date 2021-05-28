@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 - 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 /**
@@ -43,8 +43,8 @@ extern "C" {
  * @param[in] timeout     Timeout value for the locking API.
  *
  * @retval 0              Success
- * @retval - ::EBUSY      Returned without waiting.
- * @retval - ::EAGAIN     Waiting period timed out.
+ * @retval -EBUSY         Returned without waiting.
+ * @retval -EAGAIN        Waiting period timed out.
  */
 int multithreading_lock_acquire(k_timeout_t timeout);
 

@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 /** @file
@@ -29,21 +29,14 @@ struct bt_mesh_sensor_srv;
  *        sensor type. Duplicate sensors will be ignored.
  *
  *  @param[in] _sensors Array of pointers to sensors owned by this server.
- *  @param[in] _count Number of sensors in the array. Can at most be @ref
- *                    CONFIG_BT_MESH_SENSOR_SRV_SENSORS_MAX.
+ *  @param[in] _count Number of sensors in the array. Can at most be
+ *                    @option{CONFIG_BT_MESH_SENSOR_SRV_SENSORS_MAX}.
  */
 #define BT_MESH_SENSOR_SRV_INIT(_sensors, _count)                              \
 	{                                                                      \
 		.sensor_array = _sensors,                                      \
 		.sensor_count =                                                \
 			MIN(CONFIG_BT_MESH_SENSOR_SRV_SENSORS_MAX, _count),    \
-		.pub = { .update = _bt_mesh_sensor_srv_update_handler,         \
-			 .msg = NET_BUF_SIMPLE(                                \
-				 BT_MESH_SENSOR_SRV_PUB_MAXLEN(_count)) },     \
-		.setup_pub = {                                                 \
-			.msg = NET_BUF_SIMPLE(                                 \
-				BT_MESH_SENSOR_SETUP_SRV_PUB_MAXLEN),          \
-		},                                                             \
 	}
 
 /** @def BT_MESH_MODEL_SENSOR_SRV
@@ -71,14 +64,31 @@ struct bt_mesh_sensor_srv {
 	/** Ordered linked list of sensors. */
 	sys_slist_t sensors;
 	/** Publish sequence counter */
-	u16_t seq;
+	uint16_t seq;
 	/** Number of sensors. */
-	u8_t sensor_count;
+	uint8_t sensor_count;
 
 	/** Publish parameters. */
 	struct bt_mesh_model_pub pub;
+	/* Publication buffer */
+	struct net_buf_simple pub_buf;
+	/* Publication data */
+	uint8_t pub_data[BT_MESH_MODEL_BUF_LEN(
+		BT_MESH_SENSOR_OP_STATUS,
+		(CONFIG_BT_MESH_SENSOR_SRV_SENSORS_MAX *
+		 BT_MESH_SENSOR_STATUS_MAXLEN))];
 	/** Publish parameters for the setup server. */
 	struct bt_mesh_model_pub setup_pub;
+	/* Publication buffer */
+	struct net_buf_simple setup_pub_buf;
+	/* Publication data */
+	uint8_t setup_pub_data[MAX(
+		BT_MESH_MODEL_BUF_LEN(
+			BT_MESH_SENSOR_OP_SETTING_STATUS,
+			BT_MESH_SENSOR_MSG_MAXLEN_SETTING_STATUS),
+		BT_MESH_MODEL_BUF_LEN(
+			BT_MESH_SENSOR_OP_CADENCE_STATUS,
+			BT_MESH_SENSOR_MSG_MAXLEN_CADENCE_STATUS))];
 	/** Composition data model pointer. */
 	struct bt_mesh_model *model;
 };
@@ -133,7 +143,6 @@ int bt_mesh_sensor_srv_sample(struct bt_mesh_sensor_srv *srv,
 extern const struct bt_mesh_model_cb _bt_mesh_sensor_srv_cb;
 extern const struct bt_mesh_model_op _bt_mesh_sensor_srv_op[];
 extern const struct bt_mesh_model_op _bt_mesh_sensor_setup_srv_op[];
-int _bt_mesh_sensor_srv_update_handler(struct bt_mesh_model *mod);
 /** @endcond */
 
 #ifdef __cplusplus

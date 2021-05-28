@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #ifndef NRF_CLOUD_AGPS_H_
@@ -9,7 +9,6 @@
 
 /** @file nrf_cloud_agps.h
  * @brief Module to provide nRF Cloud A-GPS support to nRF9160 SiP.
- * @{
  */
 
 #include <zephyr.h>
@@ -25,12 +24,11 @@ extern "C" {
 
 /**@brief Requests specified A-GPS data from nRF Cloud.
  *
- * @param types Array of assistance data types to request.
- * @param type_count Number of types to request.
+ * @param request Structure containing specified A-GPS data to be requested.
  *
  * @return 0 if successful, otherwise a (negative) error code.
  */
-int nrf_cloud_agps_request(enum gps_agps_type *types, size_t type_count);
+int nrf_cloud_agps_request(const struct gps_agps_request request);
 
 /**@brief Requests all available A-GPS data from nRF Cloud.
  *
@@ -50,10 +48,10 @@ int nrf_cloud_agps_request_all(void);
  */
 int nrf_cloud_agps_process(const char *buf, size_t buf_len, const int *socket);
 
+/** @} */
+
 #ifdef __cplusplus
 }
 #endif
-
-/** @} */
 
 #endif /* NRF_CLOUD_AGPS_H_ */

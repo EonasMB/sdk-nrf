@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2018 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <zephyr.h>
@@ -14,7 +14,7 @@
 #include <dk_buttons_and_leds.h>
 #include <modem/lte_lc.h>
 #include <power/reboot.h>
-#include <modem/bsdlib.h>
+#include <modem/nrf_modem_lib.h>
 
 #include "aggregator.h"
 #include "ble.h"
@@ -74,7 +74,7 @@ static struct k_work connect_work;
 
 enum error_type {
 	ERROR_NRF_CLOUD,
-	ERROR_BSD_RECOVERABLE,
+	ERROR_MODEM_RECOVERABLE,
 };
 
 /* Forward declaration of functions */
@@ -94,13 +94,13 @@ void error_handler(enum error_type err_type, int err)
 		k_sched_lock();
 		err = lte_lc_power_off();
 		__ASSERT(err == 0, "lte_lc_power_off failed: %d", err);
-		bsdlib_shutdown();
+		nrf_modem_lib_shutdown();
 	}
 
 #if !defined(CONFIG_DEBUG)
 	sys_reboot(SYS_REBOOT_COLD);
 #else
-	u8_t led_pattern;
+	uint8_t led_pattern;
 
 	switch (err_type) {
 	case ERROR_NRF_CLOUD:
@@ -110,12 +110,12 @@ void error_handler(enum error_type err_type, int err)
 		led_pattern = DK_LED1_MSK | DK_LED4_MSK;
 		printk("Error of type ERROR_NRF_CLOUD: %d\n", err);
 		break;
-	case ERROR_BSD_RECOVERABLE:
+	case ERROR_MODEM_RECOVERABLE:
 		/* Blinking all LEDs ON/OFF in pairs (1 and 3, 2 and 4)
 		 * if there is a recoverable error.
 		 */
 		led_pattern = DK_LED1_MSK | DK_LED3_MSK;
-		printk("Error of type ERROR_BSD_RECOVERABLE: %d\n", err);
+		printk("Error of type ERROR_MODEM_RECOVERABLE: %d\n", err);
 		break;
 	default:
 		/* Blinking all LEDs ON/OFF in pairs (1 and 2, 3 and 4)
@@ -139,16 +139,16 @@ void nrf_cloud_error_handler(int err)
 	error_handler(ERROR_NRF_CLOUD, err);
 }
 
-/**@brief Recoverable BSD library error. */
-void bsd_recoverable_error_handler(uint32_t err)
+/**@brief Recoverable modem library error. */
+void nrf_modem_recoverable_error_handler(uint32_t err)
 {
-	error_handler(ERROR_BSD_RECOVERABLE, (int)err);
+	error_handler(ERROR_MODEM_RECOVERABLE, (int)err);
 }
 
 /**@brief Callback for GPS events */
-static void gps_handler(struct device *dev, struct gps_event *evt)
+static void gps_handler(const struct device *dev, struct gps_event *evt)
 {
-	u32_t button_state, has_changed;
+	uint32_t button_state, has_changed;
 	struct sensor_data in_data = {
 		.type = GPS_POSITION,
 		.length = evt->nmea.len,
@@ -203,8 +203,8 @@ static void gps_handler(struct device *dev, struct gps_event *evt)
 static void leds_update(struct k_work *work)
 {
 	static bool led_on;
-	static u8_t current_led_on_mask;
-	u8_t led_on_mask = current_led_on_mask;
+	static uint8_t current_led_on_mask;
+	uint8_t led_on_mask = current_led_on_mask;
 
 	ARG_UNUSED(work);
 
@@ -397,7 +397,7 @@ static void cloud_connect(struct k_work *work)
 }
 
 /**@brief Callback for button events from the DK buttons and LEDs library. */
-static void button_handler(u32_t buttons, u32_t has_changed)
+static void button_handler(uint32_t buttons, uint32_t has_changed)
 {
 	printk("button_handler: button 1: %u, button 2: %u "
 	       "switch 1: %u, switch 2: %u\n",
@@ -437,7 +437,7 @@ static void modem_configure(void)
 static void sensors_init(void)
 {
 	int err;
-	struct device *gps_dev = device_get_binding(CONFIG_GPS_DEV_NAME);
+	const struct device *gps_dev = device_get_binding(CONFIG_GPS_DEV_NAME);
 	struct gps_config gps_cfg = {
 		.nav_mode = GPS_NAV_MODE_PERIODIC,
 		.interval = CONFIG_GPS_SEARCH_INTERVAL,

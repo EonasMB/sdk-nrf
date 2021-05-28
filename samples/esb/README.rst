@@ -3,14 +3,18 @@
 Enhanced ShockBurst: Transmitter/Receiver
 #########################################
 
+.. contents::
+   :local:
+   :depth: 2
+
 The Enhanced ShockBurst Transmitter/Receiver sample shows the basic steps that are needed to transmit and receive packets using :ref:`ug_esb`.
 
 Overview
 ********
 
 The sample consists of two applications, one Transmitter and one Receiver, that use the :ref:`esb_README` library.
-After programming each application on an nRF5 development board, you can test that packets that are sent by the board that runs the Transmitter application are picked up by the board that runs the Receiver application.
-Successful communication is indicated by LED changes, which should be in sync on both boards.
+After programming each application on an nRF5 Series development kit, you can test that packets that are sent by the kit that runs the Transmitter application are picked up by the kit that runs the Receiver application.
+Successful communication is indicated by LED changes, which should be in sync on both kits.
 
 Transmitter
 ===========
@@ -31,9 +35,9 @@ Requirements
 
 The sample supports the following development kits:
 
-.. include:: /includes/boardname_tables/sample_boardnames.txt
-   :start-after: set2_start
-   :end-before: set2_end
+.. table-from-rows:: /includes/sample_board_rows.txt
+   :header: heading
+   :rows: nrf52840dk_nrf52840, nrf52dk_nrf52832
 
 You can use any two of the development kits listed above and mix different development kits.
 
@@ -56,13 +60,13 @@ See :ref:`gs_programming` for information about how to build and program the app
 Testing
 =======
 
-After programming the Transmitter sample on one of the boards and the Receiver sample on the other board, test them by performing the following steps:
+After programming the Transmitter sample on one of the development kits and the Receiver sample on the other kit, test them by performing the following steps:
 
-1. Power on both boards.
-#. Observe that the LEDs change synchronously on both boards.
-#. Optionally, connect to the boards with a terminal emulator (for example, PuTTY).
+1. Power on both kits.
+#. Observe that the LEDs change synchronously on both kits.
+#. Optionally, connect to the kits with a terminal emulator (for example, PuTTY).
    See :ref:`putty` for the required settings.
-#. Observe the logging output for both boards.
+#. Observe the logging output for both kits.
 
 Dependencies
 ************

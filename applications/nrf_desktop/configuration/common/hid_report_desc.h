@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2018 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #ifndef _HID_REPORT_DESC_H_
@@ -34,6 +34,7 @@ enum report_id {
 	REPORT_ID_KEYBOARD_LEDS,
 
 	REPORT_ID_USER_CONFIG,
+	REPORT_ID_USER_CONFIG_OUT,
 
 	REPORT_ID_VENDOR_IN,
 	REPORT_ID_VENDOR_OUT,
@@ -44,8 +45,17 @@ enum report_id {
 	REPORT_ID_COUNT
 };
 
+static const uint8_t input_reports[] = {
+	REPORT_ID_MOUSE,
+	REPORT_ID_KEYBOARD_KEYS,
+	REPORT_ID_SYSTEM_CTRL,
+	REPORT_ID_CONSUMER_CTRL,
+	REPORT_ID_BOOT_MOUSE,
+	REPORT_ID_BOOT_KEYBOARD,
+};
 
-extern const u8_t hid_report_desc[];
+
+extern const uint8_t hid_report_desc[];
 extern const size_t hid_report_desc_size;
 
 #ifdef __cplusplus

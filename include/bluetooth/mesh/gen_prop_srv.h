@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 /**
@@ -29,6 +29,8 @@ struct bt_mesh_prop_srv;
  *
  * @param[in] _properties Array of properties supported by the server.
  * @param[in] _property_count Number of properties supported by the server.
+ *                            Cannot be larger than
+ *                            @option{CONFIG_BT_MESH_PROP_MAXCOUNT}.
  * @param[in] _get Getter handler for property values. @sa
  * bt_mesh_prop_srv::get.
  * @param[in] _set Setter handler for property values. @sa
@@ -38,9 +40,6 @@ struct bt_mesh_prop_srv;
 	{                                                                      \
 		.get = _get, .set = _set, .properties = _properties,           \
 		.property_count = _property_count,                             \
-		.pub = { .update = _bt_mesh_prop_srv_update_handler,           \
-			 .msg = NET_BUF_SIMPLE(                                \
-				 BT_MESH_PROP_MSG_MAXLEN(_property_count)) },  \
 	}
 
 /** @def BT_MESH_PROP_SRV_USER_INIT
@@ -48,12 +47,7 @@ struct bt_mesh_prop_srv;
  * @brief Initialization parameters for a @ref bt_mesh_prop_srv acting as a
  * Generic User Property Server.
  */
-#define BT_MESH_PROP_SRV_USER_INIT()                                           \
-	{                                                                      \
-		.pub = { .update = _bt_mesh_prop_srv_update_handler,           \
-			 .msg = NET_BUF_SIMPLE(BT_MESH_PROP_MSG_MAXLEN(        \
-				 CONFIG_BT_MESH_PROP_MAXCOUNT)) },             \
-	}
+#define BT_MESH_PROP_SRV_USER_INIT() {}
 
 /** @def BT_MESH_PROP_SRV_ADMIN_INIT
  *
@@ -160,15 +154,19 @@ struct bt_mesh_prop_srv {
 	struct bt_mesh_model *mod;
 	/** Model publication parameters. */
 	struct bt_mesh_model_pub pub;
+	/* Publication buffer */
+	struct net_buf_simple pub_buf;
+	/* Publication data */
+	uint8_t pub_data[BT_MESH_PROP_MSG_MAXLEN(CONFIG_BT_MESH_PROP_MAXCOUNT)];
 	/** Property ID currently being published. */
-	u16_t pub_id;
+	uint16_t pub_id;
 	/** Which state is currently being published. */
 	enum bt_mesh_prop_srv_state pub_state;
 
 	/** List of properties supported by the server. */
 	struct bt_mesh_prop *const properties;
 	/** Number of properties supported by the server. */
-	const u32_t property_count;
+	const uint32_t property_count;
 
 	/** @brief Set a property value.
 	 *
@@ -224,8 +222,6 @@ struct bt_mesh_prop_srv {
  *
  * @retval 0 Successfully publish a Generic Level Status message.
  * @retval -EMSGSIZE The given property size is not supported.
- * @retval -ENOTSUP A message context was not provided and publishing is not
- * supported.
  * @retval -EADDRNOTAVAIL A message context was not provided and publishing is
  * not configured.
  * @retval -EAGAIN The device has not been provisioned.
@@ -238,15 +234,12 @@ int bt_mesh_prop_srv_pub_list(struct bt_mesh_prop_srv *srv,
  * @param[in] srv Server that owns the property.
  * @param[in] ctx Message context to publish with, or NULL to publish on the
  * configured publish parameters.
- * @param[in] prop Property to publish.
- * @param[in] value Value of the property.
+ * @param[in] val Value of the property.
  *
  * @retval 0 Successfully publish a Generic Level Status message.
  * @retval -EINVAL The server is a Client Property server, which does not
  * support publishing of property values.
  * @retval -EMSGSIZE The given property size is not supported.
- * @retval -ENOTSUP A message context was not provided and publishing is not
- * supported.
  * @retval -EADDRNOTAVAIL A message context was not provided and publishing is
  * not configured.
  * @retval -EAGAIN The device has not been provisioned.
@@ -261,7 +254,6 @@ extern const struct bt_mesh_model_op _bt_mesh_prop_user_srv_op[];
 extern const struct bt_mesh_model_op _bt_mesh_prop_admin_srv_op[];
 extern const struct bt_mesh_model_op _bt_mesh_prop_mfr_srv_op[];
 extern const struct bt_mesh_model_op _bt_mesh_prop_client_srv_op[];
-int _bt_mesh_prop_srv_update_handler(struct bt_mesh_model *mod);
 /** @endcond */
 
 #ifdef __cplusplus

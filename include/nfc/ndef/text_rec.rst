@@ -3,6 +3,10 @@
 Text records
 ############
 
+.. contents::
+   :local:
+   :depth: 2
+
 Text records contain descriptive text and can be added to any type of message.
 This kind of record can be used in a message together with other records to provide extra information.
 The Text Records module provides functions for creating and encoding text records.
@@ -17,10 +21,10 @@ In this example, the record contains the text "Hello World!" and the language co
 
 .. code-block:: c
 
-   static const u8_t en_payload[] = {
+   static const uint8_t en_payload[] = {
    	'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd', '!'
    };
-   static const u8_t en_code[] = {'e', 'n'};
+   static const uint8_t en_code[] = {'e', 'n'};
 
    int err;
 

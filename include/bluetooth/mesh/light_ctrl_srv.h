@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 /** @file
@@ -40,11 +40,6 @@ struct bt_mesh_light_ctrl_srv;
 		.onoff = BT_MESH_ONOFF_SRV_INIT(                               \
 			&_bt_mesh_light_ctrl_srv_onoff),                       \
 		.lightness = _lightness_srv,                                   \
-		.pub = { .update = _bt_mesh_light_ctrl_srv_update,             \
-			 .msg = NET_BUF_SIMPLE(                                \
-				 BT_MESH_LIGHT_CTRL_SRV_BUF_MAXLEN) },         \
-		.setup_pub.msg = NET_BUF_SIMPLE(                               \
-			BT_MESH_LIGHT_CTRL_SETUP_SRV_BUF_MAXLEN),              \
 		BT_MESH_LIGHT_CTRL_SRV_REG_INIT                                \
 	}
 
@@ -56,17 +51,17 @@ struct bt_mesh_light_ctrl_srv;
  */
 #define BT_MESH_MODEL_LIGHT_CTRL_SRV(_srv)                                     \
 	BT_MESH_MODEL_ONOFF_SRV(&(_srv)->onoff),                               \
-		BT_MESH_MODEL_CB(BT_MESH_MODEL_ID_LIGHT_LC_SRV,                \
-				 _bt_mesh_light_ctrl_srv_op, &(_srv)->pub,     \
-				 BT_MESH_MODEL_USER_DATA(                      \
-					 struct bt_mesh_light_ctrl_srv, _srv), \
-				 &_bt_mesh_light_ctrl_srv_cb),                 \
-		BT_MESH_MODEL_CB(BT_MESH_MODEL_ID_LIGHT_LC_SETUPSRV,           \
-				 _bt_mesh_light_ctrl_setup_srv_op,             \
-				 &(_srv)->setup_pub,                           \
-				 BT_MESH_MODEL_USER_DATA(                      \
-					 struct bt_mesh_light_ctrl_srv, _srv), \
-				 &_bt_mesh_light_ctrl_setup_srv_cb)
+	BT_MESH_MODEL_CB(BT_MESH_MODEL_ID_LIGHT_LC_SRV,                        \
+			 _bt_mesh_light_ctrl_srv_op, &(_srv)->pub,             \
+			 BT_MESH_MODEL_USER_DATA(                              \
+				 struct bt_mesh_light_ctrl_srv, _srv),         \
+			 &_bt_mesh_light_ctrl_srv_cb),                         \
+	BT_MESH_MODEL_CB(BT_MESH_MODEL_ID_LIGHT_LC_SETUPSRV,                   \
+			 _bt_mesh_light_ctrl_setup_srv_op,                     \
+			 &(_srv)->setup_pub,                                   \
+			 BT_MESH_MODEL_USER_DATA(                              \
+				 struct bt_mesh_light_ctrl_srv, _srv),         \
+			 &_bt_mesh_light_ctrl_setup_srv_cb)
 
 /** Light Lightness Control Server state */
 enum bt_mesh_light_ctrl_srv_state {
@@ -84,37 +79,37 @@ enum bt_mesh_light_ctrl_srv_state {
 /** Light Lightness Control Server configuration. */
 struct bt_mesh_light_ctrl_srv_cfg {
 	/** Delay from occupancy detected until light turns on. */
-	u32_t occupancy_delay;
+	uint32_t occupancy_delay;
 	/** Transition time to On state. */
-	u32_t fade_on;
+	uint32_t fade_on;
 	/** Time in On state. */
-	u32_t on;
+	uint32_t on;
 	/** Transition time to Prolong state. */
-	u32_t fade_prolong;
+	uint32_t fade_prolong;
 	/** Time in Prolong state. */
-	u32_t prolong;
+	uint32_t prolong;
 	/** Transition time to Standby state (in auto mode). */
-	u32_t fade_standby_auto;
+	uint32_t fade_standby_auto;
 	/** Transition time to Standby state (in manual mode). */
-	u32_t fade_standby_manual;
+	uint32_t fade_standby_manual;
 	/** State-wise light levels */
-	u16_t light[LIGHT_CTRL_STATE_COUNT];
+	uint16_t light[LIGHT_CTRL_STATE_COUNT];
 };
 
 /** Illumination regulator configuration */
 struct bt_mesh_light_ctrl_srv_reg_cfg {
 	/** Target illuminance values */
 	struct sensor_value lux[LIGHT_CTRL_STATE_COUNT];
-	/** Regulator positive integral coefficient */
-	u16_t kiu;
-	/** Regulator negative integral coefficient */
-	u16_t kid;
-	/** Regulator positive propotional coefficient */
-	u16_t kpu;
-	/** Regulator negative propotional coefficient */
-	u16_t kpd;
+	/** Regulator upwards integral coefficient */
+	float kiu;
+	/** Regulator downwards integral coefficient */
+	float kid;
+	/** Regulator upwards propotional coefficient */
+	float kpu;
+	/** Regulator downwards propotional coefficient */
+	float kpd;
 	/** Regulator dead zone (in percent) */
-	u8_t accuracy;
+	uint8_t accuracy;
 };
 
 /** Illumination regulator */
@@ -122,7 +117,9 @@ struct bt_mesh_light_ctrl_srv_reg {
 	/** Regulator step timer */
 	struct k_delayed_work timer;
 	/** Internal integral sum. */
-	u16_t i;
+	float i;
+	/** Previous output */
+	uint16_t prev;
 	/** Regulator configuration */
 	struct bt_mesh_light_ctrl_srv_reg_cfg cfg;
 };
@@ -139,11 +136,11 @@ struct bt_mesh_light_ctrl_srv {
 	/** Parameters for the start of current state */
 	struct {
 		/** Initial light level */
-		u16_t initial_light;
+		uint16_t initial_light;
 		/** Initial illumination level */
 		struct sensor_value initial_lux;
 		/** Fade duration */
-		u32_t duration;
+		uint32_t duration;
 	} fade;
 	/** Present ambient illumination */
 	struct sensor_value ambient_lux;
@@ -160,8 +157,19 @@ struct bt_mesh_light_ctrl_srv {
 	struct bt_mesh_light_ctrl_srv_cfg cfg;
 	/** Publish parameters */
 	struct bt_mesh_model_pub pub;
+	/* Publication buffer */
+	struct net_buf_simple pub_buf;
+	/* Publication data */
+	uint8_t pub_data[BT_MESH_MODEL_BUF_LEN(
+		BT_MESH_LIGHT_CTRL_OP_LIGHT_ONOFF_STATUS, 3)];
 	/** Setup model publish parameters */
 	struct bt_mesh_model_pub setup_pub;
+	/* Publication buffer */
+	struct net_buf_simple setup_pub_buf;
+	/* Publication data */
+	uint8_t setup_pub_data[BT_MESH_MODEL_BUF_LEN(
+		BT_MESH_LIGHT_CTRL_OP_PROP_STATUS,
+		2 + CONFIG_BT_MESH_SENSOR_CHANNEL_ENCODED_SIZE_MAX)];
 
 #if CONFIG_BT_MESH_LIGHT_CTRL_SRV_REG
 	/** Illuminance regulator */
@@ -178,6 +186,8 @@ struct bt_mesh_light_ctrl_srv {
 	struct bt_mesh_model *model;
 	/** Composition data setup server model instance */
 	struct bt_mesh_model *setup_srv;
+	/** Scene entry */
+	struct bt_mesh_scene_entry scene;
 };
 
 /** @brief Turn the light on.
@@ -187,7 +197,6 @@ struct bt_mesh_light_ctrl_srv {
  *  Prolong state, it's moved back into the On state.
  *
  *  @param[in] srv        Light Lightness Control Server instance.
- *  @param[in] transition Transition time or NULL.
  *
  *  @retval 0      The Light Lightness Control Server was successfully turned
  *                 on.
@@ -201,10 +210,9 @@ int bt_mesh_light_ctrl_srv_on(struct bt_mesh_light_ctrl_srv *srv);
  *  state). Calling this function temporarily disables occupancy sensor
  *  triggering (referred to as "manual mode" in the documentation). The server
  *  will remain in manual mode until the manual mode timer expires, see
- *  @ref CONFIG_BT_MESH_LIGHT_CTRL_SRV_TIME_MANUAL.
+ *  @option{CONFIG_BT_MESH_LIGHT_CTRL_SRV_TIME_MANUAL}.
  *
  *  @param[in] srv        Light Lightness Control Server instance.
- *  @param[in] transition Transition time or NULL.
  *
  *  @retval 0      The Light Lightness Control Server was successfully turned
  *                 off.
@@ -254,8 +262,6 @@ bool bt_mesh_light_ctrl_srv_is_on(struct bt_mesh_light_ctrl_srv *srv);
  *                 parameters.
  *
  *  @return 0              Successfully published the current Light state.
- *  @retval -ENOTSUP       A message context was not provided and publishing is
- *                         not supported.
  *  @retval -EADDRNOTAVAIL A message context was not provided and publishing is
  *                         not configured.
  *  @retval -EAGAIN        The device has not been provisioned.
@@ -269,7 +275,6 @@ extern const struct bt_mesh_model_op _bt_mesh_light_ctrl_srv_op[];
 extern const struct bt_mesh_model_cb _bt_mesh_light_ctrl_setup_srv_cb;
 extern const struct bt_mesh_model_op _bt_mesh_light_ctrl_setup_srv_op[];
 extern const struct bt_mesh_onoff_srv_handlers _bt_mesh_light_ctrl_srv_onoff;
-int _bt_mesh_light_ctrl_srv_update(struct bt_mesh_model *mod);
 /** @endcond */
 
 #ifdef __cplusplus

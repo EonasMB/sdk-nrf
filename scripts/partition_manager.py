@@ -2,7 +2,7 @@
 #
 # Copyright (c) 2019 Nordic Semiconductor ASA
 #
-# SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
 
 import argparse
 import yaml
@@ -14,6 +14,28 @@ PERMITTED_STR_KEYS = ['size', 'region']
 END_TO_START = 'end_to_start'
 START_TO_END = 'start_to_end'
 COMPLEX = 'complex'
+INVALID_ONE_OF_PROPERTIES = ['placement']
+
+ALIGNMENT_ERROR = """Unable to fulfill alignment requirement automatically.
+Please re-size the configured partition sizes to get a valid configuration.
+If you are not able to get a valid configuration either re-evaluate th e
+alignment requirements, or use 'static configuration' (see docs) to specify the
+ partitioning. Note that aligning more than one partition which shares size
+ with the dynamic partition (e.g. 'app')  is not supported."""
+
+
+INVALID_ONE_OF_ERROR = """'one_of' was detected in one of the following
+properties:
+
+{}
+
+'one of' cannot be used with these properties because its functionality is
+supported in their keywords by default. Lists should be used instead.
+""".format('\n'.join(f'- {x}' for x in INVALID_ONE_OF_PROPERTIES))
+
+
+class PartitionError(Exception):
+    pass
 
 
 def remove_item_not_in_list(list_to_remove_from, list_to_check, dp):
@@ -23,26 +45,41 @@ def remove_item_not_in_list(list_to_remove_from, list_to_check, dp):
 
 def item_is_placed(d, item, after_or_before):
     assert after_or_before in ['after', 'before']
-    return after_or_before in d['placement'] and d['placement'][after_or_before][0] == item
+    return (('placement' in d) and
+            (after_or_before in d['placement']) and
+            (d['placement'][after_or_before][0] == item))
 
 
-def resolve_one_of(reqs, partitions):
+def resolve_one_of(reqs, partitions, invalid=False):
+    """
+    Recursively search for and handle `one_of` values in configuration keys.
+
+    :kwarg bool invalid:    `one_of` has been marked as invalid for use in this
+                            iteration of resolving, and should raise an
+                            exception if found.
+    """
     def empty_one_of(one_of_list):
-        return RuntimeError("'one_of' dict did not evaluate to any partition. "
-                            "Available partitions {}, one_of {}".format(partitions, one_of_list))
+        return "'one_of' dict did not evaluate to any partition." \
+               f" Available partitions {partitions}, one_of {one_of_list}"
 
     for k, v in reqs.items():
         if isinstance(v, dict):
             if 'one_of' in v.keys():
+                if invalid:
+                    raise PartitionError(INVALID_ONE_OF_ERROR)
                 if len(v.keys()) != 1:
-                    raise RuntimeError("'one_of' must be the only key in its dict")
+                    raise PartitionError(
+                        "'one_of' must be the only key in its dict")
                 # Now fetch the first existing partition. Note that the value must be a list even if there is only
                 # one entry.
                 reqs[k] = [partition for partition in v['one_of'] if partition in partitions][:1]
                 if len(reqs[k]) == 0:
-                    raise empty_one_of(v['one_of'])
+                    raise PartitionError(empty_one_of(v['one_of']))
             else:
-                resolve_one_of(v, partitions)
+                # Mark as invalid in the next recursion if already invalid or
+                # descending into values of invalid keys.
+                resolve_one_of(v, partitions, invalid=(
+                    invalid or k in INVALID_ONE_OF_PROPERTIES))
         # 'one_of' dicts can occur inside lists of partitions.
         # dicts with 'one_of' key is the only dict supported inside lists
         elif isinstance(v, list):
@@ -51,12 +88,16 @@ def resolve_one_of(reqs, partitions):
             to_add = list()
             for i in v:
                 if isinstance(i, dict):
+                    if invalid:
+                        raise PartitionError(INVALID_ONE_OF_ERROR)
                     if 'one_of' not in i.keys():
-                        raise RuntimeError("Found illegal dict inside list. Only 'one_of' dicts are allowed")
+                        raise PartitionError(
+                            "Found illegal dict inside list. Only 'one_of' "
+                            "dicts are allowed")
                     try:
                         to_add.append([partition for partition in i['one_of'] if partition in partitions][0])
                     except IndexError:
-                        raise empty_one_of(i['one_of'])
+                        raise PartitionError(empty_one_of(i['one_of']))
                     to_remove.append(i)
             if to_add:
                 reqs[k] = [i if i not in to_remove else to_add.pop(0) for i in v]
@@ -95,7 +136,8 @@ def remove_irrelevant_requirements(reqs, dp):
     # Verify that no partitions define an empty 'placement'
     for k, v in reqs.items():
         if 'placement' in v.keys() and len(v['placement']) == 0:
-            raise RuntimeError("Found empty 'placement' property for partition '{}'".format(k))
+            raise PartitionError(
+                f"Found empty 'placement' property for partition '{k}'")
 
     # Exchange all occurrences of 'one_of' list, with the first existing partition in the 'one_of' list.
     # Extend the keys given as input with 'end' and 'start' as these are also valid references.
@@ -163,17 +205,6 @@ def solve_direction(reqs, sub_partitions, unsolved, solution, ab):
             current = pool[current_index]
 
 
-def solve_first_last(reqs, unsolved, solution):
-    for fl in [('after', 'start', lambda x: solution.insert(0, x)), ('before', 'end', solution.append)]:
-        first_or_last = [x for x in reqs.keys() if 'placement' in reqs[x]
-                         and fl[0] in reqs[x]['placement'].keys()
-                         and fl[1] in reqs[x]['placement'][fl[0]]]
-        if first_or_last:
-            fl[2](first_or_last[0])
-            if first_or_last[0] in unsolved:
-                unsolved.remove(first_or_last[0])
-
-
 def solve_inside(reqs, sub_partitions):
     for key, value in reqs.items():
         if 'inside' in value.keys():
@@ -202,7 +233,8 @@ def clean_sub_partitions(reqs, sub_partitions):
     while not done:
         done = True
         for key, value in sub_partitions.items():
-            assert len(value['span']) > 0, "partition {} is empty".format(key)
+            if len(value['span']) == 0:
+                raise PartitionError(f"partition {key} is empty")
             value['orig_span'] = value['span'].copy()  # Take a "backup" of the span.
             for part in (part for part in value['span'] if part in sub_partitions):
                 value['span'].extend(sub_partitions[part]['span'])
@@ -222,31 +254,75 @@ def convert_str_to_list(with_str):
             with_str[k].append(v)
 
 
+def resolve_ambiguous_requirements(reqs, unsolved):
+    """
+    Find partitions where the requirements are identical, and therefore
+    ambiguous. For all partitions with identical requirements, introduce
+    requirements so that the partitions have unique placements(sorted by name).
+    """
+
+    buckets = dict()
+    for partition in unsolved:
+        key = str(reqs[partition]['placement'])
+        if key not in buckets:
+            buckets[key] = list()
+        buckets[key].append(partition)
+
+    for partitions in buckets.values():
+        if len(partitions) > 1:
+            # Two or more partitions share the same requirement, update the
+            # requirements to ensure explicit order.
+            partitions = sorted(partitions)
+            for i in range(len(partitions) - 1):
+                reqs[partitions[i]]['placement'] \
+                    = {'before': [partitions[i + 1]]}
+
+
 def resolve(reqs, dp):
     convert_str_to_list(reqs)
-    solution = list([dp])
+    solution = ["start", dp, "end"]
 
     remove_irrelevant_requirements(reqs, dp)
     sub_partitions = {k: v for k, v in reqs.items() if 'span' in v}
-    reqs = {k: v for k, v in reqs.items() if 'span' not in v}
+    for k, v in list(reqs.items()):
+        if 'span' in v:
+            del reqs[k]
 
     solve_inside(reqs, sub_partitions)
     clean_sub_partitions(reqs, sub_partitions)
 
     unsolved = get_images_which_need_resolving(reqs, sub_partitions)
-    solve_first_last(reqs, unsolved, solution)
+    resolve_ambiguous_requirements(reqs, unsolved)
+
+    for name, req in reqs.items():
+        if (item_is_placed(req, "start", "before") or item_is_placed(req, "end", "after")):
+            raise PartitionError(f'Partition "{name}" was placed before start or after end.')
+
     while unsolved:
+        current_len = len(unsolved)
         solve_direction(reqs, sub_partitions, unsolved, solution, 'before')
         solve_direction(reqs, sub_partitions, unsolved, solution, 'after')
+        if current_len == len(unsolved):
+            raise PartitionError('Unable to solve the following partitions (endless loop):\n'
+                                 + pformat(unsolved))
+
+    assert(solution[0] == "start" and solution[-1] == "end"), "invalid solution wrt. start and end."
+    solution.remove("start")
+    solution.remove("end")
 
     # Validate partition spanning.
     for sub in sub_partitions:
         indices = [solution.index(part) for part in sub_partitions[sub]['span']]
-        assert ((not indices) or (max(indices) - min(indices) + 1 == len(indices))), \
-            "partition {} ({}) does not span over consecutive parts." \
-            " Solution: {}".format(sub, str(sub_partitions[sub]['span']), str(solution))
+        if not ((not indices)
+                or (max(indices) - min(indices) + 1 == len(indices))):
+            raise PartitionError(f"partition {sub}"
+                                 f" ({str(sub_partitions[sub]['span'])})"
+                                 f" does not span over consecutive "
+                                 f"parts. Solution: {str(solution)}")
         for part in sub_partitions[sub]['span']:
-            assert (part in solution), "Some or all parts of partition {} have not been placed.".format(part)
+            if part not in solution:
+                raise PartitionError(f'Some or all parts of partition {part}'
+                                     f' have not been placed.')
 
     return solution, sub_partitions
 
@@ -298,7 +374,7 @@ def get_dependent_partitions(all_reqs, target):
                      and target in all_reqs[v['share_size'][0]]['span']))]
 
 
-def app_size(reqs, total_size, dp):
+def dynamic_partitions_size(reqs, total_size, dp):
     size = total_size - sum([req['size'] for name, req in reqs.items() if 'size' in req.keys() and name != dp])
     return size
 
@@ -306,14 +382,19 @@ def app_size(reqs, total_size, dp):
 def verify_layout(reqs, solution, total_size, flash_start):
     # Verify no overlap, that all flash is assigned, and that the total amount of flash
     # assigned corresponds to the total size available.
-    expected_address = flash_start + reqs[solution[0]]['size']
-    for p in solution[1:]:
+    expected_address = flash_start
+    for p in solution:
         actual_address = reqs[p]['address']
         if actual_address != expected_address:
-            raise RuntimeError("Error when inspecting {}, invalid address {}".format(p, actual_address))
+            raise PartitionError(f'Error when inspecting {p},'
+                                 f' invalid address {hex(actual_address)},'
+                                 f' expected {hex(expected_address)},')
+
         expected_address += reqs[p]['size']
     last = reqs[solution[-1]]
-    assert last['address'] + last['size'] == flash_start + total_size
+    if not last['address'] + last['size'] == flash_start + total_size:
+        raise PartitionError('End of last partition is after last valid'
+                             ' address')
 
 
 def set_addresses_and_align(reqs, sub_partitions, solution, size, dp, start=0):
@@ -321,7 +402,7 @@ def set_addresses_and_align(reqs, sub_partitions, solution, size, dp, start=0):
     set_shared_size(all_reqs, size, dp)
     dynamic_partitions = [dp]
     dynamic_partitions += get_dependent_partitions(all_reqs, dp)
-    reqs[dp]['size'] = app_size(reqs, size, dp)
+    reqs[dp]['size'] = dynamic_partitions_size(reqs, size, dp)
     reqs[solution[0]]['address'] = start
 
     if len(reqs) > 1:
@@ -350,7 +431,9 @@ def _set_addresses_and_align(reqs, sub_partitions, solution, size, start, dynami
         if i == 0 and first_partition_has_been_aligned(reqs[current], solution):
             continue
 
-        if align_if_required(i, dynamic_partitions, insert_empty_partition_before, reqs, solution):
+        if align_if_required(i, dynamic_partitions,
+                             insert_empty_partition_before, reqs, dp,
+                             solution):
             _set_addresses_and_align(reqs, sub_partitions, solution, size, start, dynamic_partitions, dp)
 
     for i in range(len(solution) - 1, solution.index(dp), -1):
@@ -362,14 +445,19 @@ def _set_addresses_and_align(reqs, sub_partitions, solution, size, start, dynami
             higher_partition = solution[i + 1]
             reqs[current]['address'] = reqs[higher_partition]['address'] - reqs[current]['size']
 
-        if align_if_required(i, dynamic_partitions, False, reqs, solution):
-            _set_addresses_and_align(reqs, sub_partitions, solution, size, start, dynamic_partitions, dp)
+        if align_if_required(i, dynamic_partitions, False, reqs, dp, solution):
+            try:
+                _set_addresses_and_align(reqs, sub_partitions, solution, size,
+                                         start, dynamic_partitions, dp)
+            except RecursionError:
+                raise PartitionError(ALIGNMENT_ERROR)
 
 
-def align_if_required(i, dynamic_partitions, move_up, reqs, solution):
+def align_if_required(i, dynamic_partitions, move_up, reqs, dp, solution):
     current = solution[i]
     if 'placement' in reqs[current] and 'align' in reqs[current]['placement']:
-        required_offset = align_partition(current, reqs, move_up, dynamic_partitions)
+        required_offset = align_partition(current, reqs, move_up,
+                                          dynamic_partitions, dp, solution)
         if required_offset:
             solution_index = i if move_up else i + 1
             solution.insert(solution_index, required_offset)
@@ -377,7 +465,7 @@ def align_if_required(i, dynamic_partitions, move_up, reqs, solution):
     return False
 
 
-def align_partition(current, reqs, move_up, dynamic_partitions):
+def align_partition(current, reqs, move_up, dynamic_partitions, dp, solution):
     required_offset = get_required_offset(align=reqs[current]['placement']['align'], start=reqs[current]['address'],
                                           size=reqs[current]['size'], move_up=move_up)
     if not required_offset:
@@ -394,10 +482,14 @@ def align_partition(current, reqs, move_up, dynamic_partitions):
             if reqs[current]['address'] != 0:  # Special handling for the first partition as it cannot be moved down
                 reqs[current]['address'] -= required_offset
     elif not move_up:
+        align_end = 'end' in reqs[current]['placement']['align']
         empty_partition_address, empty_partition_size = \
-            align_dynamic_partition(dynamic_partitions, current, reqs, required_offset)
+            get_empty_part_to_move_dyn_part(dynamic_partitions, current, reqs,
+                                            required_offset, align_end,
+                                            solution)
     else:
-        raise RuntimeError("Invalid combination, can not have dynamic partition in front of app with alignment")
+        raise PartitionError('Invalid combination, can not have dynamic'
+                             ' partition in front of app with alignment')
 
     e = 'EMPTY_{}'.format(len([x for x in reqs.keys() if 'EMPTY' in x]))
     reqs[e] = {'address': empty_partition_address,
@@ -405,32 +497,84 @@ def align_partition(current, reqs, move_up, dynamic_partitions):
                'region': reqs[dynamic_partitions[0]]['region'],
                'placement': {'before' if move_up else 'after': [current]}}
 
-    if current not in dynamic_partitions:
-        # The size of this partition is statically defined. This means the size of the dynamically sized partitions must
-        # be decreased correspondingly. Hence, all partitions which share size with dynamic partition must have their
-        # size reduced. Note that the total amount of 'stealing' is divided between the partitions sharing size with app
-        # (including dynamic partition itself).
-        for p in dynamic_partitions:
-            reqs[p]['size'] = reqs[p]['size'] - (reqs[e]['size'] // len(dynamic_partitions))
+    # Adjust size of dynamic partitions to accommodate for new empty partition
+    for p in dynamic_partitions:
+        reqs[p]['size'] -= reqs[e]['size'] // len(dynamic_partitions)
 
     return e
 
 
-def align_dynamic_partition(app_dep_parts, current, reqs, required_offset):
-    # Since this is a dynamic partition, the introduced empty partition will take space from the dynamic_partition
-    # and the partition being aligned. Take special care to ensure the offset becomes correct.
-    required_offset *= 2
-    for p in app_dep_parts:
-        reqs[p]['size'] -= required_offset // 2
-    reqs[current]['address'] -= required_offset
-    empty_partition_address = reqs[current]['address'] + reqs[current]['size']
-    empty_partition_size = required_offset
+def get_empty_part_to_move_dyn_part(dynamic_partitions, current, reqs,
+                                    num_bytes_to_move_dyn_part, move_end,
+                                    solution):
+    """
+    Find the start address and size of a new empty partition whose purpose is
+    to move the partition @current @num_bytes_to_move_dyn_part bytes down
+    (lower address). The empty partition will always be placed directly
+    behind the last partition in the list @dynamic_partitions.
+
+    :param dynamic_partitions: List of partitions which share size with the
+    main dynamic partition.
+    :param current: Partition being moved. Must be a member of the
+    @dynamic_partitions list.
+    :param reqs: Dict of current partition manager requirements
+    :param num_bytes_to_move_dyn_part: Number of bytes to move the dynamic
+    partition @current (down)
+    :param move_end: Should the end or start of @current be moved
+    @num_num_bytes_to_move_dyn_part bytes?
+    :param solution: List representing the order of the partitions in the
+    solution.
+    :return: address, size of an empty partition which would result in start or
+    end of @current being moved @num_bytes_to_move_dyn_part bytes down
+    (lower address).
+    """
+
+    # Get the dynamic partitions in the order they appear in the flash
+    # placement solution.
+    dyn_solution = [x for x in solution if x in dynamic_partitions]
+    first_dyn = dyn_solution[0]
+
+    # The current partition is dynamic, and all dynamic partitions are bundled
+    # together. See how many dynamic partitions are in front of the current
+    # partition
+    num_dyn_part_in_front = solution.index(current) - solution.index(first_dyn)
+
+    if not num_bytes_to_move_dyn_part > 0:
+        raise PartitionError('Invalid move size specified, must be > 0.')
+
+    if move_end:
+        # Add the current partition to the list of dynamic partitions in front,
+        # since the end is moved, and the resize in the current partition will
+        # affect the alignment as well.
+        num_dyn_part_in_front += 1
+
+    reduction_each_dynamic_part = \
+        num_bytes_to_move_dyn_part // num_dyn_part_in_front
+
+    if not reduction_each_dynamic_part % 4 == 0:
+        raise PartitionError(f'The current configuration gives {first_dyn}'
+                             f' a non-word-aligned size' + ALIGNMENT_ERROR)
+
+    if not reduction_each_dynamic_part < reqs[first_dyn]['size']:
+        raise PartitionError(
+            f"The current configuration is invalid because it requires "
+            f"{first_dyn}'s size to be less than 0." + ALIGNMENT_ERROR)
+
+    # The size and address of the dynamic partitions will be calculated
+    # automatically based on the size of the
+    # non-dynamic partitions.
+    last_dyn = reqs[dyn_solution[-1]]
+    empty_partition_size = \
+        reduction_each_dynamic_part * len(dynamic_partitions)
+    empty_partition_address = \
+        last_dyn['address'] + last_dyn['size'] - empty_partition_size
+
     return empty_partition_address, empty_partition_size
 
 
 def get_required_offset(align, start, size, move_up):
     if len(align) != 1 or ('start' not in align and 'end' not in align):
-        raise RuntimeError("Invalid alignment requirement {}".format(align))
+        raise PartitionError(f'Invalid alignment requirement {align}')
 
     end = start + size
     align_start = 'start' in align
@@ -461,7 +605,8 @@ def set_sub_partition_address_and_size(reqs, sub_partitions):
     for sp_name, sp_value in sub_partitions.items():
         size = sum([reqs[part]['size'] for part in sp_value['span']])
         if size == 0:
-            raise RuntimeError("No compatible parent partition found for {}".format(sp_name))
+            raise PartitionError(
+                f'No compatible parent partition found for {sp_name}')
         address = min([reqs[part]['address'] for part in sp_value['span']])
 
         reqs[sp_name] = sp_value
@@ -471,7 +616,7 @@ def set_sub_partition_address_and_size(reqs, sub_partitions):
 
 def sizeof(reqs, req, total_size, dp):
     if req == dp:
-        size = app_size(reqs, total_size, dp)
+        size = dynamic_partitions_size(reqs, total_size, dp)
     elif 'span' not in reqs[req].keys():
         size = reqs[req]['size'] if 'size' in reqs[req].keys() else 0
     else:
@@ -491,27 +636,50 @@ def load_reqs(input_config):
                     continue
                 for key in loaded_reqs.keys():
                     if key in reqs.keys() and loaded_reqs[key] != reqs[key]:
-                        raise RuntimeError("Conflicting configuration found for '{}' value for key '{}' differs."
-                                           "val1: {} val2: {} ".format(f.name, key, loaded_reqs[key], reqs[key]))
+                        raise PartitionError(
+                            f"Conflicting configuration found for '{f.name}'"
+                            f" value for key '{key}' differs. val1: "
+                            f"{loaded_reqs[key]} val2: {reqs[key]} ")
                 reqs.update(loaded_reqs)
 
     return reqs
 
 
-def get_dynamic_area_start_and_size(static_config, flash_size, dp):
-    # Remove app from this dict to simplify the case where partitions before and after are removed.
+def get_dynamic_area_start_and_size(static_config, base, size, dp):
+    # Remove app from this dict to simplify the case where partitions
+    # before and after are removed.
     proper_partitions = [config for name, config in static_config.items()
                          if 'span' not in config.keys() and
                          name != dp]
 
-    starts = {flash_size} | {config['address'] for config in proper_partitions}
-    ends = {0} | {config['address'] + config['size'] for config in proper_partitions}
+    first_address = base
+    last_address = base + size
+
+    starts = {last_address} | {config['address']
+                               for config in proper_partitions}
+    ends = {first_address} | {config['address'] + config['size']
+                              for config in proper_partitions}
     gaps = list(zip(sorted(ends - starts), sorted(starts - ends)))
 
-    assert len(gaps) == 1, "Incorrect amount of gaps found"
+    if len(gaps) != 1:
+        raise PartitionError(
+            "Incorrect amount of gaps found in static configuration. "
+            "There must be exactly one gap in the static configuration to "
+            "support placing the dynamic partitions (such as 'app'). "
+            f"Gaps found ({len(gaps)}):" +
+            " ".join([f"0x{gap[0]:x}-0x{gap[1]:x}" for gap in gaps]) +
+            " The most common solution to this problem is to fill the "
+            "smallest of these gaps with statically defined partition(s) until"
+            " there is only one gap left. Alternatively re-order the already "
+            "defined static partitions so that only one gap remains.")
 
     start, end = gaps[0]
     return start, end - start
+
+
+def calculate_end_address(pm_config):
+    for part in pm_config:
+        pm_config[part]['end_address'] = pm_config[part]['address'] + pm_config[part]['size']
 
 
 def get_region_config(pm_config, region_config, static_conf=None):
@@ -528,8 +696,9 @@ def get_region_config(pm_config, region_config, static_conf=None):
         solve_simple_region(pm_config, start, size, placement_strategy, region_name, device, static_conf)
     else:
         if dp != 'app':
-            # All configurations use 'app' to denote the dynamic partition. Replace all occurences of 'app' in the given
-            # configuration to facilitate working with it.
+            # All configurations use 'app' to denote the dynamic partition.
+            # Replace all occurrences of 'app' in the given configuration to
+            # facilitate working with it.
             replace_app_with_dynamic_partition(pm_config, dp)
 
             # Create a span over the dynamic partition so that 'app' can be used as a reference for the dynamic
@@ -541,11 +710,13 @@ def get_region_config(pm_config, region_config, static_conf=None):
 
         solve_complex_region(pm_config, start, size, placement_strategy, region_name, device, static_conf, dp)
 
+    calculate_end_address(pm_config)
+
 
 def solve_simple_region(pm_config, start, size, placement_strategy, region_name, device, static_conf):
     reserved = 0
     if static_conf:
-        verify_static_conf(size, start, placement_strategy, static_conf)
+        verify_static_conf_simple(size, start, placement_strategy, static_conf)
         reserved = sum([config['size'] for name, config in static_conf.items()
                         if 'region' in config.keys() and config['region'] == region_name])
         pm_config.update(static_conf)
@@ -573,8 +744,10 @@ def solve_simple_region(pm_config, start, size, placement_strategy, region_name,
         # Generate the region partition containing the non-reserved memory.
         # But first, verify that the user hasn't created a partition with the name of the region.
         if region_name in pm_config:
-            raise RuntimeError(f"Found partition named {region_name}, "
-                               f"this is the name of a region, and is a reserved name")
+            raise PartitionError(
+                f'Found partition named {region_name}, this is the name of a'
+                f' region, and is a reserved name')
+
         pm_config[region_name] = dict()
         pm_config[region_name]['region'] = region_name
 
@@ -586,11 +759,14 @@ def solve_simple_region(pm_config, start, size, placement_strategy, region_name,
             pm_config[region_name]['size'] = (start + size) - address
 
 
-def verify_static_conf(size, start, placement_strategy, static_conf):
-    # Verify that all statically defined partitions has given address,
+def verify_static_conf_simple(size, start, placement_strategy, static_conf):
+    # Verify the static configuration of a region with 'simple' placement.
+    # Ensure that all statically defined partitions have a given address,
     # and that they are packed at the end/start of the region.
-    starts = {start + size} | {c['address'] for c in static_conf.values() if 'size' in c}
-    ends = {start} | {c['address'] + c['size'] for c in static_conf.values() if 'size' in c}
+    starts = {start + size} | {c['address']
+                               for c in static_conf.values() if 'size' in c}
+    ends = {start} | {c['address'] + c['size']
+                      for c in static_conf.values() if 'size' in c}
     gaps = list(zip(sorted(ends - starts), sorted(starts - ends)))
 
     # The whole region is filled, which is valid.
@@ -602,15 +778,29 @@ def verify_static_conf(size, start, placement_strategy, static_conf):
     else:
         start_end_correct = gaps[0][0] == start
 
-    if len(gaps) != 1 or not start_end_correct:
-        raise RuntimeError("Statically defined partitions are not packed at the start/end of region")
+    if len(gaps) != 1:
+        raise PartitionError(
+            "Incorrect amount of gaps found in static configuration for region"
+            f" '{list(static_conf.values())[0]['region']}'. "
+            "There must be exactly one gap in the static configuration to "
+            "support placing the non-statically-defined partitions. "
+            f"Gaps found ({len(gaps)}):" +
+            " ".join([f"0x{gap[0]:x}-0x{gap[1]:x}" for gap in gaps]) +
+            " The most common solution to this problem is to re-order the "
+            "defined static partitions so that only one gap remains.")
+    elif not start_end_correct:
+        raise PartitionError(
+            f"Statically defined partitions are not packed at "
+            f"{'start' if placement_strategy == START_TO_END else 'end'} of "
+            f"region '{list(static_conf.values())[0]['region']}'.")
 
 
 def solve_complex_region(pm_config, start, size, placement_strategy, region_name, device, static_conf, dp):
     free_size = size
 
     if static_conf:
-        start, free_size = get_dynamic_area_start_and_size(static_conf, free_size, dp)
+        start, free_size = \
+            get_dynamic_area_start_and_size(static_conf, start, size, dp)
 
         # If nothing is unresolved (only dynamic partition remaining),
         # simply return the pre defined config with dynamic_partition
@@ -650,19 +840,19 @@ This file contains all addresses and sizes of all partitions.
 
 "pm_config.h" is in the same folder as the given 'pm.yml' file.''',
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--input-files", required=True, type=str, nargs="+",
-                        help="List of paths to input yaml files. ")
+    parser.add_argument('--input-files', required=True, type=str, nargs='+',
+                        help='List of paths to input yaml files.')
 
-    parser.add_argument("--output-partitions", required=True, type=str,
-                        help="Path to output partition configuration file.")
+    parser.add_argument('--output-partitions', required=True, type=str,
+                        help='Path to output partition configuration file.')
 
-    parser.add_argument("--output-regions", required=True, type=str,
-                        help="Path to output regions configuration file.")
+    parser.add_argument('--output-regions', required=True, type=str,
+                        help='Path to output regions configuration file.')
 
-    parser.add_argument("--static-config", required=False, type=argparse.FileType(mode='r'),
-                        help="Path static configuration.")
+    parser.add_argument('--static-config', required=False, type=argparse.FileType(mode='r'),
+                        help='Path static configuration.')
 
-    parser.add_argument("--regions", required=False, type=str, nargs='*',
+    parser.add_argument('--regions', required=False, type=str, nargs='*',
                         help="Space separated list of regions. For each region specified here, one must specify"
                              "--{region_name}-base-addr and --{region_name}-size. If the region is associated"
                              "with a driver, the device name must be given in --{region_name}-device (e.g. an "
@@ -681,7 +871,7 @@ This file contains all addresses and sizes of all partitions.
         parser.add_argument(f'--{x}-placement-strategy', required=False, type=str,
                             choices=[START_TO_END, END_TO_START, COMPLEX], default=START_TO_END)
         parser.add_argument(f'--{x}-device', required=False, type=str, default='')
-        parser.add_argument(f'--{x}-dynamic-partition', required=False, type=str, help="Name of dynamic partition")
+        parser.add_argument(f'--{x}-dynamic-partition', required=False, type=str, help='Name of dynamic partition')
 
     ranges_configuration = parser.parse_args(region_args)
 
@@ -698,14 +888,16 @@ def replace_app_with_dynamic_partition(d, dynamic_partition_name):
             v = dynamic_partition_name
 
 
-def set_flash_primary_region(pm_config):
-    for v in pm_config.values():
-        if 'region' not in v:
-            v['region'] = 'flash_primary'
-
-
 def fix_syntactic_sugar(pm_config):
-    set_flash_primary_region(pm_config)
+    for k, v in pm_config.items():
+        if 'region' not in v:
+            # Set SRAM primary region
+            if k.endswith('_sram'):
+                v['region'] = 'sram_primary'
+
+            # Set FLASH primary region
+            else:
+                v['region'] = 'flash_primary'
 
 
 def get_region_config_from_args(args, ranges_configuration):
@@ -736,7 +928,8 @@ def load_static_configuration(args, pm_config):
     # This is done since all partitions in pm_config will be resolved.
     for statically_defined_image in static_config:
         if statically_defined_image in pm_config and statically_defined_image:
-            print (f"Dropping partition '{statically_defined_image}' since it is statically defined.")
+            print(f"Partition '{statically_defined_image}' is not included "
+                  "in the dynamic resolving since it is statically defined.")
             del pm_config[statically_defined_image]
     return static_config
 
@@ -751,25 +944,42 @@ def main():
 
     solution = dict()
     for region, region_config in regions.items():
-        solution.update(solve_region(pm_config, region, region_config, static_config))
+        try:
+            solution.update(solve_region(pm_config, region, region_config,
+                                         static_config))
+        except PartitionError as e:
+            print(f"Partition manager failed: {str(e)}")
+            print(f"Failed to partition region {region},"
+                  f" size of region: {region_config['size']}")
+            print('Partition Configuration:')
+            to_print = \
+                {x: {a: b for a, b in y.items() if a in
+                     ['size', 'placement', 'align']}
+                 for x, y in {**pm_config, **static_config}.items()
+                 if 'size' in y and 'region' in y and y['region'] == region}
+            print(yaml.dump(to_print))
+            sys.exit(1)
 
     write_yaml_out_file(solution, args.output_partitions)
     write_yaml_out_file(regions, args.output_regions)
 
 
 def expect_addr_size(td, name, expected_address, expected_size):
-    if expected_size:
+    if expected_size is not None:
         assert td[name]['size'] == expected_size, \
-            "Size of {} was {}, expected {}.\ntd:{}".format(name, td[name]['size'], expected_size, pformat(td))
-    if expected_address:
+            'Size of {} was {}, expected {}.\ntd:{}'.format(name, td[name]['size'], expected_size, pformat(td))
+    if expected_address is not None:
         assert td[name]['address'] == expected_address, \
-            "Address of {} was {}, expected {}.\ntd:{}".format(name, td[name]['address'], expected_address, pformat(td))
+            'Address of {} was {}, expected {}.\ntd:{}'.format(name, td[name]['address'], expected_address, pformat(td))
+    if expected_size is not None and expected_address is not None:
+        assert td[name]['end_address'] == expected_address + expected_size, \
+            'End address of {} was {}, expected {}.\ntd:{}'.format(name, td[name]['end_address'], expected_address + expected_size, pformat(td))
 
 
 def expect_list(expected, actual):
     expected_list = list(sorted(expected))
     actual_list = list(sorted(actual))
-    assert sorted(expected_list) == sorted(actual_list), "Expected list %s, was %s" % (str(expected_list), str(actual_list))
+    assert sorted(expected_list) == sorted(actual_list), 'Expected list {}, was {}'.format(expected_list, actual_list)
 
 
 def test():
@@ -785,7 +995,7 @@ def test():
         'app':   {'address': 20, 'size': 10},
         # Gap from deleted partition.
         'fourth': {'address': 40, 'size': 60}}
-    start, size = get_dynamic_area_start_and_size(test_config, 100, 'app')
+    start, size = get_dynamic_area_start_and_size(test_config, 0, 100, 'app')
     assert start == 10
     assert size == 40-10
 
@@ -796,7 +1006,7 @@ def test():
         # Gap from deleted partition.
     }
 
-    start, size = get_dynamic_area_start_and_size(test_config, 100, 'app')
+    start, size = get_dynamic_area_start_and_size(test_config, 0, 100, 'app')
     assert start == 20
     assert size == 80
 
@@ -804,7 +1014,7 @@ def test():
         'app':    {'address': 0,    'size': 10},
         # Gap from deleted partition.
         'second': {'address': 40, 'size': 60}}
-    start, size = get_dynamic_area_start_and_size(test_config, 100, 'app')
+    start, size = get_dynamic_area_start_and_size(test_config, 0, 100, 'app')
     assert start == 0
     assert size == 40
 
@@ -812,19 +1022,30 @@ def test():
         'first': {'address': 0,    'size': 10},
         # Gap from deleted partition.
         'app':   {'address': 20, 'size': 10}}
-    start, size = get_dynamic_area_start_and_size(test_config, 100, 'app')
+    start, size = get_dynamic_area_start_and_size(test_config, 0, 100, 'app')
     assert start == 10
     assert size == 100 - 10
 
+    # Verify that base address can be larger than 0 (RAM vs FLASH)
+    test_config = {
+        'first': {'address': 1000, 'size': 10},
+        # Gap from deleted partition.
+        'app': {'address': 1200, 'size': 10}}
+    start, size = get_dynamic_area_start_and_size(test_config, 1000, 400,
+                                                  'app')
+    assert start == 1010
+    assert size == 400 - 10
+
     # Verify that all 'end' and 'start' are valid references in 'one_of' dicts
     td = {
-        'a': {'placement': {'after': {'one_of': ['x0', 'x1', 'start']}}, 'size': 100},
-        'b': {'placement': {'before': {'one_of': ['x0', 'x1', 'end']}}, 'size': 200},
+        'a': {'placement': {'after': ['x0', 'x1', 'start']}, 'size': 100},
+        'b': {'placement': {'before': ['x0', 'x1', 'end']}, 'size': 200},
         'app': {},
     }
     s, sub_partitions = resolve(td, 'app')
     set_addresses_and_align(td, sub_partitions, s, 1000, 'app')
     set_sub_partition_address_and_size(td, sub_partitions)
+    calculate_end_address(td)
     expect_addr_size(td, 'a', 0, 100)
     expect_addr_size(td, 'app', 100, 700)
     expect_addr_size(td, 'b', 800, 200)
@@ -852,66 +1073,66 @@ def test():
     assert td['extflash']['address'] == 2100
     assert td['extflash']['size'] == 900
 
-    # Verify that RAM configuration is correct
-    td = {'b': {'size': 100, 'region': 'ram'}}
-    test_region = {'name': 'ram',
+    # Verify that SRAM configuration is correct
+    td = {'b': {'size': 100, 'region': 'sram'}}
+    test_region = {'name': 'sram',
                    'size': 1000,
                    'base_address': 2000,
                    'placement_strategy': END_TO_START,
                    'device': None}
     get_region_config(td, test_region)
     assert td['b']['size'] == 100
-    assert td['ram']['address'] == 2000
-    assert td['ram']['size'] == 900
+    assert td['sram']['address'] == 2000
+    assert td['sram']['size'] == 900
 
-    # Verify that RAM configuration is correct
+    # Verify that sram configuration is correct
     td = {
-        'b': {'size': 100, 'region': 'ram'},
-        'c': {'size': 200, 'region': 'ram'},
-        'd': {'size': 300, 'region': 'ram'}
+        'b': {'size': 100, 'region': 'sram'},
+        'c': {'size': 200, 'region': 'sram'},
+        'd': {'size': 300, 'region': 'sram'}
     }
-    test_region = {'name': 'ram',
+    test_region = {'name': 'sram',
                    'size': 1000,
                    'base_address': 2000,
                    'placement_strategy': END_TO_START,
                    'device': None}
     get_region_config(td, test_region)
-    assert td['ram']['address'] == 2000
-    assert td['ram']['size'] == 400
+    assert td['sram']['address'] == 2000
+    assert td['sram']['size'] == 400
     # Can not verify the placement, as this is random
     assert td['b']['size'] == 100
     assert td['c']['size'] == 200
     assert td['d']['size'] == 300
 
-    # Verify that RAM configuration with given static configuration is correct
-    test_region = {'name': 'ram',
+    # Verify that SRAM configuration with given static configuration is correct
+    test_region = {'name': 'sram',
                    'size': 1000,
                    'base_address': 2000,
                    'placement_strategy': END_TO_START,
                    'device': None}
     td = {
-        'b': {'size': 100, 'region': 'ram'},
-        'c': {'size': 200, 'region': 'ram'},
-        'd': {'size': 300, 'region': 'ram'},
+        'b': {'size': 100, 'region': 'sram'},
+        'c': {'size': 200, 'region': 'sram'},
+        'd': {'size': 300, 'region': 'sram'},
     }
     get_region_config(td,
                       test_region,
                       static_conf={'s1': {'size': 100,
                                           'address': (1000+2000)-100,
-                                          'region': 'ram'},
+                                          'region': 'sram'},
                                    's2': {'size': 200,
                                           'address': (1000+2000)-100-200,
-                                          'region': 'ram'}})
-    assert td['ram']['address'] == 2000
-    assert td['ram']['size'] == 100
+                                          'region': 'sram'}})
+    assert td['sram']['address'] == 2000
+    assert td['sram']['size'] == 100
     # Can not verify the placement, as this is random
     assert td['b']['size'] == 100
     assert td['c']['size'] == 200
     assert td['d']['size'] == 300
 
-    # Verify that RAM configuration with given static configuration fails if static RAM partitions are not
+    # Verify that SRAM configuration with given static configuration fails if static SRAM partitions are not
     # packed at the end of flash, here there is a space between the two regions
-    test_region = {'name': 'ram',
+    test_region = {'name': 'sram',
                    'size': 1000,
                    'base_address': 2000,
                    'placement_strategy': END_TO_START,
@@ -919,9 +1140,9 @@ def test():
     failed = False
     td = {
         'a': {'placement': {'after': 'start'}, 'size': 100},
-        'b': {'size': 100, 'region': 'ram'},
-        'c': {'size': 200, 'region': 'ram'},
-        'd': {'size': 300, 'region': 'ram'},
+        'b': {'size': 100, 'region': 'sram'},
+        'c': {'size': 200, 'region': 'sram'},
+        'd': {'size': 300, 'region': 'sram'},
         'app': {}
     }
     try:
@@ -929,28 +1150,28 @@ def test():
                           test_region,
                           static_conf={'s1': {'size': 100,
                                               'address': (1000+2000)-100,
-                                              'region': 'ram'},
+                                              'region': 'sram'},
                                        's2': {'size': 200,
                                               'address': (1000+2000)-100-300,
-                                              'region': 'ram'}})  # Note 300 not 200
-    except RuntimeError:
+                                              'region': 'sram'}})  # Note 300 not 200
+    except PartitionError:
         failed = True
 
     assert failed
 
-    # Verify that RAM configuration with given static configuration fails if static RAM partitions are not
-    # packed at the end of flash, here the partitions are packed, but does not go to the end of RAM
+    # Verify that SRAM configuration with given static configuration fails if static SRAM partitions are not
+    # packed at the end of flash, here the partitions are packed, but does not go to the end of SRAM
     failed = False
-    test_region = {'name': 'ram',
+    test_region = {'name': 'sram',
                    'size': 1000,
                    'base_address': 2000,
                    'placement_strategy': END_TO_START,
                    'device': None}
     td = {
         'a': {'placement': {'after': 'start'}, 'size': 100},
-        'b': {'size': 100, 'region': 'ram'},
-        'c': {'size': 200, 'region': 'ram'},
-        'd': {'size': 300, 'region': 'ram'},
+        'b': {'size': 100, 'region': 'sram'},
+        'c': {'size': 200, 'region': 'sram'},
+        'd': {'size': 300, 'region': 'sram'},
         'app': {}
     }
     try:
@@ -958,11 +1179,11 @@ def test():
                           test_region,
                           static_conf={'s1': {'size': 100,
                                               'address': (1000+2000-50)-100,
-                                              'region': 'ram'},  # Note - 50
+                                              'region': 'sram'},  # Note - 50
                                        's2': {'size': 200,
                                               'address': (1000+2000-50)-100-200,
-                                              'region': 'ram'}})  # Note - 50
-    except RuntimeError:
+                                              'region': 'sram'}})  # Note - 50
+    except PartitionError:
         failed = True
 
     assert failed
@@ -970,7 +1191,7 @@ def test():
     # Verify that all 'one_of' dicts are replaced with the first entry which corresponds to an existing partition
     td = {
         'a': {'placement': {'after': 'start'}, 'size': 100},
-        'b': {'placement': {'after': {'one_of': ['x0', 'x1', 'a', 'x2']}}, 'size': 200},
+        'b': {'placement': {'after': ['x0', 'x1', 'a', 'x2']}, 'size': 200},
         'c': {'placement': {'after': 'b'}, 'share_size': {'one_of': ['x0', 'x1', 'b', 'a']}},
         'd': {'placement': {'after': 'c'}, 'share_size': {'one_of': ['a', 'b']}},  # Should take first existing
         # We can use  several 'one_of' - dicts inside lists
@@ -981,6 +1202,7 @@ def test():
     s, sub_partitions = resolve(td, 'app')
     set_addresses_and_align(td, sub_partitions, s, 1000, 'app')
     set_sub_partition_address_and_size(td, sub_partitions)
+    calculate_end_address(td)
     expect_addr_size(td, 'a', 0, 100)  # b is after a
     expect_addr_size(td, 'b', 100, 200)  # b is after a
     expect_addr_size(td, 'c', 300, 200)  # c shares size with b
@@ -992,14 +1214,14 @@ def test():
     # Verify that all 'share_size' with value partition that has size 0 is compatible with 'one_of' dicts
     td = {
         'a': {'placement': {'after': 'start'}, 'size': 0},
-        'b': {'placement': {'after': {'one_of': ['a', 'start']}},
+        'b': {'placement': {'after': ['a', 'start']},
               'share_size': ['a']},
-        'c': {'placement': {'after': {'one_of': ['a', 'b', 'start']}},
+        'c': {'placement': {'after': ['a', 'b', 'start']},
               'share_size': {'one_of': ['a', 'b']}},
-        'd': {'placement': {'after': {'one_of': ['a', 'b', 'c', 'start']}},
+        'd': {'placement': {'after': ['a', 'b', 'c', 'start']},
               'share_size': {'one_of': ['a', 'b', 'c']}},
         # You get the point
-        'e': {'placement': {'after': {'one_of': ['a', 'b', 'c', 'd', 'start']}}, 'size': 100}
+        'e': {'placement': {'after': ['a', 'b', 'c', 'd', 'start']}, 'size': 100}
     }
     remove_all_zero_sized_partitions(td, 'app')
     assert 'a' not in td
@@ -1010,36 +1232,28 @@ def test():
     # Verify that all 'share_size' with value partition that has size 0 is compatible withe 'one_of' dicts.
     td = {
         'a': {'placement': {'after': 'start'}, 'size': 0},
-        'b': {'placement': {'after': {'one_of': ['a', 'start']}},
+        'b': {'placement': {'after': ['a', 'start']},
               'share_size': ['a']},
-        'c': {'placement': {'after': {'one_of': ['a', 'b', 'start']}},
+        'c': {'placement': {'after': ['a', 'b', 'start']},
               'share_size': {'one_of': ['a', 'b']}},
-        'd': {'placement': {'after': {'one_of': ['a', 'b', 'c', 'start']}},
+        'd': {'placement': {'after': ['a', 'b', 'c', 'start']},
               'share_size': {'one_of': ['a', 'b', 'c']}},
+        # Empty spans should be removed
+        'e': {'span': [], 'region': 'sram'},
         # You get the point
-        'e': {'placement': {'after': {'one_of': ['a', 'b', 'c', 'd', 'start']}}, 'size': 100},
+        'f': {'placement': {'after': ['a', 'b', 'c', 'd', 'start']}, 'size': 100},
         'app': {}
     }
     # Perform the same test as above, but run it through the 'resolve' function this time.
     s, sub_partitions = resolve(td, 'app')
     set_addresses_and_align(td, sub_partitions, s, 1000, 'app')
+    calculate_end_address(td)
     assert 'a' not in td
     assert 'b' not in td
     assert 'c' not in td
     assert 'd' not in td
-    expect_addr_size(td, 'e', 0, 100)
-
-    # Verify that an error is raised when no partition inside 'one_of' dicts exist as dict value
-    failed = False
-    td = {
-        'a': {'placement': {'after': {'one_of': ['x0', 'x1']}}, 'size': 100},
-        'app': {}
-    }
-    try:
-        resolve(td, 'app')
-    except RuntimeError:
-        failed = True
-    assert failed
+    assert 'e' not in td
+    expect_addr_size(td, 'f', 0, 100)
 
     # Verify that an error is raised when no partition inside 'one_of' dicts exist as list item
     failed = False
@@ -1050,7 +1264,7 @@ def test():
     }
     try:
         resolve(td, 'app')
-    except RuntimeError:
+    except PartitionError:
         failed = True
     assert failed
 
@@ -1063,7 +1277,7 @@ def test():
     failed = False
     try:
         s, sub_partitions = resolve(td, 'app')
-    except RuntimeError:
+    except PartitionError:
         failed = True
     assert failed
 
@@ -1081,8 +1295,8 @@ def test():
     assert offset == 600
 
     for l in [
-            lambda : get_required_offset(align={'end': ["CONFIG_VAR"]}, start=0, size=1000, move_up=False),
-            lambda : get_required_offset(align={'start': ["CONFIG_VAR"]}, start=0, size=1000, move_up=False),
+            lambda : get_required_offset(align={'end': ['CONFIG_VAR']}, start=0, size=1000, move_up=False),
+            lambda : get_required_offset(align={'start': ['CONFIG_VAR']}, start=0, size=1000, move_up=False),
             lambda : get_required_offset(align={'start': [[2]]},start=0, size=1000, move_up=False)
             ]:
         failed = False
@@ -1090,13 +1304,14 @@ def test():
             l()
         except TypeError:
             failed = True
-        assert failed, "Should have received a TypeError."
+        assert failed, 'Should have received a TypeError.'
     # Verify that the first partition can be aligned, and that the inserted empty partition is placed behind it.
     td = {'first': {'placement': {'before': 'app', 'align': {'end': 800}}, 'size': 100},
           'app': {'region': 'flash_primary',}}
     s, sub_partitions = resolve(td, 'app')
     set_addresses_and_align(td, sub_partitions, s, 1000, 'app')
     set_sub_partition_address_and_size(td, sub_partitions)
+    calculate_end_address(td)
     expect_addr_size(td, 'EMPTY_0', 100, 700)
     expect_addr_size(td, 'app', 800, 200)
 
@@ -1124,6 +1339,7 @@ def test():
     s, sub_partitions = resolve(td, 'app')
     set_addresses_and_align(td, sub_partitions, s, 1000, 'app')
     set_sub_partition_address_and_size(td, sub_partitions)
+    calculate_end_address(td)
     expect_addr_size(td, 'EMPTY_0', 100, 100)
     expect_addr_size(td, 'with_alignment', 200, 100)
 
@@ -1134,6 +1350,7 @@ def test():
     s, sub_partitions = resolve(td, 'app')
     set_addresses_and_align(td, sub_partitions, s, 1000, 'app')
     set_sub_partition_address_and_size(td, sub_partitions)
+    calculate_end_address(td)
     expect_addr_size(td, 'app', 0, 700)
     expect_addr_size(td, 'with_alignment', 800, 100)
     expect_addr_size(td, 'EMPTY_0', 900, 100)
@@ -1146,6 +1363,7 @@ def test():
     s, sub_partitions = resolve(td, 'app')
     set_addresses_and_align(td, sub_partitions, s, 10000, 'app')
     set_sub_partition_address_and_size(td, sub_partitions)
+    calculate_end_address(td)
     expect_addr_size(td, 'EMPTY_0', 100, 200)
     expect_addr_size(td, 'with_alignment', 300, 100)
     expect_addr_size(td, 'EMPTY_1', 400, 600)
@@ -1159,6 +1377,7 @@ def test():
     s, sub_partitions = resolve(td, 'app')
     set_addresses_and_align(td, sub_partitions, s, 10000, 'app')
     set_sub_partition_address_and_size(td, sub_partitions)
+    calculate_end_address(td)
     expect_addr_size(td, 'EMPTY_0', 10000, 300)
     expect_addr_size(td, 'with_alignment', 10300, 100)
     expect_addr_size(td, 'EMPTY_1', 10400, 600)
@@ -1208,6 +1427,7 @@ def test():
     s, sub_partitions = resolve(td, 'app')
     set_addresses_and_align(td, sub_partitions, s, 0x100000, 'app')
     set_sub_partition_address_and_size(td, sub_partitions)
+    calculate_end_address(td)
     expect_addr_size(td, 'EMPTY_0', 0x14200, 0xe00)
     expect_addr_size(td, 'EMPTY_1', 0x21200, 0xe00)
     expect_addr_size(td, 'EMPTY_2', 0xdc000, 0x1000)
@@ -1231,6 +1451,7 @@ def test():
     s, sub_partitions = resolve(td, 'app')
     set_addresses_and_align(td, sub_partitions, s, 1000, 'app')
     set_sub_partition_address_and_size(td, sub_partitions)
+    calculate_end_address(td)
     expect_addr_size(td, 'should_exist', 0, 200)
 
     td = {'spm': {'placement': {'before': ['app']}, 'size': 100},
@@ -1239,6 +1460,7 @@ def test():
     s, sub_partitions = resolve(td, 'app')
     set_addresses_and_align(td, sub_partitions, s, 1000, 'app')
     set_sub_partition_address_and_size(td, sub_partitions)
+    calculate_end_address(td)
     expect_addr_size(td, 'mcuboot', 0, None)
     expect_addr_size(td, 'spm', 200, None)
     expect_addr_size(td, 'app', 300, 700)
@@ -1250,6 +1472,7 @@ def test():
     s, sub_partitions = resolve(td, 'app')
     set_addresses_and_align(td, sub_partitions, s, 1000, 'app')
     set_sub_partition_address_and_size(td, sub_partitions)
+    calculate_end_address(td)
     expect_addr_size(td, 'mcuboot', 0, None)
     expect_addr_size(td, 'spm', 200, 100)
     expect_addr_size(td, 'app', 300, 700)
@@ -1267,6 +1490,7 @@ def test():
     s, sub_partitions = resolve(td, 'app')
     set_addresses_and_align(td, sub_partitions, s, 1000, 'app')
     set_sub_partition_address_and_size(td, sub_partitions)
+    calculate_end_address(td)
     expect_addr_size(td, 'mcuboot', 0, None)
     expect_addr_size(td, 'spm', 210, None)
     expect_addr_size(td, 'mcuboot_slot0', 200, 200)
@@ -1288,6 +1512,7 @@ def test():
     s, sub_partitions = resolve(td, 'app')
     set_addresses_and_align(td, sub_partitions, s, 1000, 'app')
     set_sub_partition_address_and_size(td, sub_partitions)
+    calculate_end_address(td)
     expect_addr_size(td, 'mcuboot', 0, None)
     expect_addr_size(td, 'spm', 210, None)
     expect_addr_size(td, 'mcuboot_slot0', 200, 200)
@@ -1313,6 +1538,7 @@ def test():
     s, sub_partitions = resolve(td, 'app')
     set_addresses_and_align(td, {}, s, 1000, 'app')
     set_sub_partition_address_and_size(td, sub_partitions)
+    calculate_end_address(td)
     expect_addr_size(td, 'a', 0, None)
     expect_addr_size(td, 'b', 100, None)
     expect_addr_size(td, 'c', 120, None)
@@ -1331,6 +1557,7 @@ def test():
           'app': {}}
     s, _ = resolve(td, 'app')
     set_addresses_and_align(td, {}, s, 1000, 'app')
+    calculate_end_address(td)
     expect_addr_size(td, 'b0', 0, None)
     expect_addr_size(td, 'mcuboot', 100, None)
     expect_addr_size(td, 'app', 300, 700)
@@ -1338,6 +1565,7 @@ def test():
     td = {'b0': {'placement': {'before': ['mcuboot', 'app']}, 'size': 100}, 'app': {}}
     s, _ = resolve(td, 'app')
     set_addresses_and_align(td, {}, s, 1000, 'app')
+    calculate_end_address(td)
     expect_addr_size(td, 'b0', 0, None)
     expect_addr_size(td, 'app', 100, 900)
 
@@ -1346,6 +1574,7 @@ def test():
           'app': {}}
     s, _ = resolve(td, 'app')
     set_addresses_and_align(td, {}, s, 1000, 'app')
+    calculate_end_address(td)
     expect_addr_size(td, 'mcuboot', 0, None)
     expect_addr_size(td, 'spu', 200, None)
     expect_addr_size(td, 'app', 300, 700)
@@ -1357,6 +1586,7 @@ def test():
           'app': {}}
     s, _ = resolve(td, 'app')
     set_addresses_and_align(td, {}, s, 1000, 'app')
+    calculate_end_address(td)
     expect_addr_size(td, 'b0', 0, None)
     expect_addr_size(td, 'mcuboot', 50, None)
     expect_addr_size(td, 'spu', 150, None)
@@ -1383,12 +1613,141 @@ def test():
     expect_list(['b'], sub)
     expect_list(['d'], sub['b']['orig_span']) # Backup must contain edits.
 
-    print("All tests passed!")
+    # Verify that ambiguous requirements are resolved
+    td = {
+        '2': {'placement': {'before': ['end']}},
+        '1': {'placement': {'before': ['end']}},
+        'app': {'region': 'flash_primary'}
+    }
+    s, _ = resolve(td, 'app')
+    expect_list(['app', '1', '2'], s)
+
+    # Verify that partitions cannot be placed after end.
+    td = {
+        '2': {'placement': {'before': ['end']}},
+        '1': {'placement': {'after': ['end']}},
+        'app': {'region': 'flash_primary'}
+    }
+    try:
+        resolve(td, 'app')
+    except PartitionError:
+        failed = True
+
+    assert failed
+
+    # Verify that partitions cannot be placed before start.
+    td = {
+        '2': {'placement': {'before': ['start']}},
+        '1': {'placement': {'before': ['end']}},
+        'app': {'region': 'flash_primary'}
+    }
+    try:
+        resolve(td, 'app')
+    except PartitionError:
+        failed = True
+
+    assert failed
+
+    td = {
+        '6': {'placement': {'after': ['3']}},
+        '4': {'placement': {'after': ['3']}},
+        '5': {'placement': {'after': ['3']}},
+        '2': {'placement': {'after': ['start']}},
+        '3': {'placement': {'after': ['start']}},
+        '1': {'placement': {'after': ['start']}},
+        'app': {'region': 'flash_primary'}
+    }
+    s, _ = resolve(td, 'app')
+    expect_list(['1', '2', '3', '4', '5', '6', 'app'], s)
+
+    # Verify aligning dynamic partitions
+
+    # Align end
+    td = {'b0': {'address': 0, 'size': 1000},
+          'app': {'address': 1000, 'size': 500},
+          'share1': {'address': 1500, 'size': 500}}
+    empty_partition_address, empty_partition_size = \
+        get_empty_part_to_move_dyn_part(['app', 'share1'], 'share1', td, 400,
+                                        move_end=True,
+                                        solution=['app', 'share1'])
+    assert empty_partition_address == 1600
+    assert empty_partition_size == 400
+
+    # Align start
+    td = {'b0': {'address': 0, 'size': 1000},
+          'app': {'address': 1000, 'size': 500},
+          'share1': {'address': 1500, 'size': 500}}
+    empty_partition_address, empty_partition_size = \
+        get_empty_part_to_move_dyn_part(['share1', 'app'], 'share1', td, 400,
+                                        move_end=False,
+                                        solution=['app', 'share1'])
+    assert empty_partition_address == 1200
+    assert empty_partition_size == 800
+
+    # Align start, > 2 dynamic partitions
+    td = {'b0': {'address': 0, 'size': 1000},
+          'app': {'address': 1000, 'size': 500},
+          'share1': {'address': 1500, 'size': 500},
+          'share2': {'address': 2000, 'size': 500},
+          'share3': {'address': 2500, 'size': 500}}
+
+    empty_partition_address, empty_partition_size = \
+        get_empty_part_to_move_dyn_part(['app', 'share3', 'share2', 'share1'],
+                                        'share3', td, 300, move_end=False,
+                                        solution=['app', 'share2', 'share2',
+                                                  'share3'])
+    assert empty_partition_address == 2600
+    assert empty_partition_size == 400
+
+    # Align end, > 2 dynamic partitions
+    td = {'b0': {'address': 0, 'size': 1000},
+          'app': {'address': 1000, 'size': 500},
+          'share1': {'address': 1500, 'size': 500},
+          'share2': {'address': 2000, 'size': 500},
+          'share3': {'address': 2500, 'size': 500}}
+
+    empty_partition_address, empty_partition_size = \
+        get_empty_part_to_move_dyn_part(['app', 'share3', 'share2', 'share1'],
+                                        'share3', td, 400, move_end=True,
+                                        solution=['app', 'share1', 'share2',
+                                                  'share3'])
+    assert empty_partition_address == 2600
+    assert empty_partition_size == 400
+
+    # Invalid alignment attempt, move size is too big. (move size is 600 and
+    # size of app is 500)
+    td = {'b0': {'address': 0, 'size': 1000},
+          'app': {'address': 1000, 'size': 500},
+          'share1': {'address': 1500, 'size': 500}}
+    failed = False
+    try:
+        get_empty_part_to_move_dyn_part(['app', 'share1'], 'share1', td, 600,
+                                        move_end=False,
+                                        solution=['app', 'share1'])
+    except PartitionError:
+        failed = True
+
+    assert failed
+
+    # Invalid alignment attempt, reduction size is not word aligned.
+    failed = False
+    td = {'b0': {'address': 0, 'size': 1000},
+          'app': {'address': 1000, 'size': 500},
+          'share1': {'address': 1500, 'size': 500}}
+    try:
+        get_empty_part_to_move_dyn_part(['app', 'share1'], 'share1', td, 333,
+                                        move_end=False,
+                                        solution=['app', 'share1'])
+    except PartitionError:
+        failed = True
+    assert failed
+
+    print('All tests passed!')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     if len(sys.argv) > 1:
         main()
     else:
-        print("No input, running tests.")
+        print('No input, running tests.')
         test()

@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 /**
@@ -43,7 +43,7 @@ srv_kind(const struct bt_mesh_model *mod)
 	return 0;
 }
 
-static inline u32_t op_get(enum bt_mesh_prop_op_type op_type,
+static inline uint32_t op_get(enum bt_mesh_prop_op_type op_type,
 			   enum bt_mesh_prop_srv_kind kind)
 {
 	switch (kind) {

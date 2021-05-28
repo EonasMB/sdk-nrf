@@ -1,16 +1,10 @@
 #
 # Copyright (c) 2019 Nordic Semiconductor
 #
-# SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
 #
 
-cmake_minimum_required(VERSION 3.8.2)
-
-set(NRF_SUPPORTED_BOARDS
-  nrf52dk_nrf52832
-  nrf52840dk_nrf52840
-  nrf5340pdk_nrf5340_cpuapp
-  )
+cmake_minimum_required(VERSION 3.13.1)
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(NONE)

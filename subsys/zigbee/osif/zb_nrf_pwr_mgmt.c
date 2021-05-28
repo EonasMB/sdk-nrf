@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <sys/atomic.h>
@@ -29,7 +29,10 @@ void zb_osif_sleep_init(void)
  */
 __weak zb_uint32_t zb_osif_sleep(zb_uint32_t sleep_tmo)
 {
-	zb_uint32_t time_slept_ms = 0;
+	/* The amount of microseconds that the ZBOSS task was blocked. */
+	zb_uint32_t time_slept_us;
+	/* The amount of milliseconds that the ZBOSS task was blocked. */
+	zb_uint32_t time_slept_ms;
 
 	if (!sleep_tmo) {
 		return sleep_tmo;
@@ -43,17 +46,27 @@ __weak zb_uint32_t zb_osif_sleep(zb_uint32_t sleep_tmo)
 	 * Such solution may break the internal logic of the stack.
 	 */
 	ZVUNUSED(time_slept_ms);
+	ZVUNUSED(time_slept_us);
 	return ZB_SLEEP_INVALID_VALUE;
 #else
+
+#if ZB_TRACE_LEVEL
 	ZB_SET_TRACE_OFF();
+#endif /* ZB_TRACE_LEVEL */
 
 	/* Lock timer value from updating during sleep period. */
 	ZVUNUSED(atomic_set((atomic_t *)&is_sleeping, 1));
 
 	/* Wait for an event. */
-	time_slept_ms = zigbee_event_poll(sleep_tmo);
+	time_slept_us = zigbee_event_poll(sleep_tmo * USEC_PER_MSEC);
 
-	/* Unlock timer value updaes. */
+	/* Calculate sleep duration in milliseconds. Round up the result
+	 * to avoid possible errors in the event of
+	 * another time unit conversion.
+	 */
+	time_slept_ms = ceiling_fraction(time_slept_us, USEC_PER_MSEC);
+
+	/* Unlock timer value updates. */
 	ZVUNUSED(atomic_set((atomic_t *)&is_sleeping, 0));
 
 	/* Enable Zigbee stack-related peripherals. */
@@ -70,9 +83,11 @@ __weak zb_uint32_t zb_osif_sleep(zb_uint32_t sleep_tmo)
  * wants to implement their own going-to-deep-sleep policy/share resources
  * between Zigbee stack and other components.
  */
-__weak zb_void_t zb_osif_wake_up(void)
+__weak void zb_osif_wake_up(void)
 {
+#if ZB_TRACE_LEVEL
 	ZB_SET_TRACE_ON();
+#endif /* ZB_TRACE_LEVEL */
 	/* Restore trace interrupts. TODO: Restore something else if needed */
 }
 

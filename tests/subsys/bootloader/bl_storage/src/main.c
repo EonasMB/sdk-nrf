@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <ztest.h>
@@ -28,7 +28,7 @@ void test_monotonic_counter(void)
 	zassert_equal(0, ret, "ret %d\r\n", ret);
 	zassert_equal(CONFIG_FW_INFO_FIRMWARE_VERSION + 1,
 		get_monotonic_counter() >> 1, NULL);
-	printk("Rebooting. Should fail to validated because of "
+	printk("Rebooting. Should fail to validate because of "
 		"monotonic counter.\n");
 	sys_reboot(0);
 }

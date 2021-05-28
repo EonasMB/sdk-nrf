@@ -3,6 +3,10 @@
 Power manager module
 ####################
 
+.. contents::
+   :local:
+   :depth: 2
+
 Use the power manager module to reduce the energy consumption of battery-powered devices.
 The module achieves this by switching to low power modes when the device is not used for a longer period of time.
 
@@ -19,23 +23,23 @@ Module events
 Configuration
 *************
 
-You can enable the power manager module by selecting the ``CONFIG_DESKTOP_POWER_MANAGER_ENABLE`` option in the configuration.
+You can enable the power manager module by selecting the :option:`CONFIG_DESKTOP_POWER_MANAGER_ENABLE` option in the configuration.
 
 This module uses Zephyr's :ref:`zephyr:power_management_api` subsystem.
-It depends on :option:`CONFIG_HAS_SYS_POWER_STATE_DEEP_SLEEP_1` being enabled and selects :option:`CONFIG_DEVICE_POWER_MANAGEMENT` and :option:`CONFIG_SYS_POWER_DEEP_SLEEP_STATES`.
+It depends on :option:`CONFIG_HAS_POWER_STATE_DEEP_SLEEP_1` being enabled and selects :option:`CONFIG_DEVICE_POWER_MANAGEMENT` and :option:`CONFIG_PM_DEEP_SLEEP_STATES`.
 
 Time-out configuration options
 ==============================
 
-With the ``CONFIG_DESKTOP_POWER_MANAGER_TIMEOUT`` configuration option, you can set the amount of time after which the application will go to the low power mode.
+With the :option:`CONFIG_DESKTOP_POWER_MANAGER_TIMEOUT` configuration option, you can set the amount of time after which the application will go to the low power mode.
 By default, the time-out is set to 120 seconds.
 
-The ``CONFIG_DESKTOP_POWER_MANAGER_ERROR_TIMEOUT`` sets the amount of time after which the device is turned off upon an internal error.
+The :option:`CONFIG_DESKTOP_POWER_MANAGER_ERROR_TIMEOUT` sets the amount of time after which the device is turned off upon an internal error.
 
 Optional boolean for keeping the system on
 ==========================================
 
-The ``CONFIG_DESKTOP_POWER_MANAGER_STAY_ON`` lets the system stay on also when there are no active connections.
+The :option:`CONFIG_DESKTOP_POWER_MANAGER_STAY_ON` lets the system stay on also when there are no active connections.
 
 For more information about configuration options, check the help in the configuration tool.
 
@@ -70,7 +74,7 @@ In this state, the board is either connected or actively looking for a new conne
 The peripherals can be turned on, including LEDs.
 
 The application remains in this state indefinitely if the device is connected through USB.
-In such case, the operating system will be kept in the ``SYS_POWER_STATE_ACTIVE`` state.
+In such case, the operating system will be kept in the ``POWER_STATE_ACTIVE`` state.
 
 If the device is not connected through USB, the module counts time elapsed since the last user interaction (that is, since the last HID report sent from the device).
 On timeout, the power manager module sets the application to either the suspended or the off state.
@@ -81,10 +85,10 @@ Suspended
 Upon power-down time-out, the power manager will switch the application to the suspended state if one of the following conditions is met:
 
 * The device is connected to a remote peer.
-* The option ``CONFIG_DESKTOP_POWER_MANAGER_STAY_ON`` is selected.
+* The option :option:`CONFIG_DESKTOP_POWER_MANAGER_STAY_ON` is selected.
 
 The other modules of the application, if applicable, will turn off the peripherals or switch them to standby to conserve power.
-The operating system will be kept in the ``SYS_POWER_STATE_ACTIVE`` state.
+The operating system will be kept in the ``POWER_STATE_ACTIVE`` state.
 
 It is assumed that the operating system will conserve power by setting the CPU state to idle whenever possible.
 The established connection is maintained.
@@ -95,10 +99,10 @@ Off
 Upon power-down time-out, the power manager will switch the application to the deep sleep mode if the following conditions are met:
 
 * The device is disconnected.
-* The option ``CONFIG_DESKTOP_POWER_MANAGER_STAY_ON`` is disabled.
+* The option :option:`CONFIG_DESKTOP_POWER_MANAGER_STAY_ON` is disabled.
 
 If applicable, the other modules of the application will turn off the peripherals or switch them to standby to conserve power.
-The operating system will be switched to the ``SYS_POWER_STATE_DEEP_SLEEP_1`` state.
+The operating system will be switched to the ``POWER_STATE_DEEP_SLEEP_1`` state.
 The devices will be suspended and the CPU will be switched to the deep sleep (off) mode.
 
 A device reboot is required to exit this state.
@@ -109,7 +113,7 @@ Error
 The power manager module checks if any application modules reported an error condition.
 
 When any application module switches to the error state (that is, broadcasts ``MODULE_STATE_ERROR`` through ``module_state_event``), the power manager will put the application into the error state.
-Then, after the amount of time defined by ``CONFIG_DESKTOP_POWER_MANAGER_ERROR_TIMEOUT``, it will put the application to off state.
+Then, after the amount of time defined by :option:`CONFIG_DESKTOP_POWER_MANAGER_ERROR_TIMEOUT`, it will put the application to off state.
 During this period, the error condition can be reported to the user by other modules (for example, :ref:`nrf_desktop_led_state`).
 
 Switching to low power
@@ -129,7 +133,7 @@ Only after all modules confirmed that they have entered the low power state (by 
 If a disconnection happens while the device is in the suspended state, the power manager will switch the application to the off state.
 
 However, the application can also be configured to keep the system in the suspended state when there are no active connections, instead of switching to the off state.
-To select this behavior, use the ``CONFIG_DESKTOP_POWER_MANAGER_STAY_ON`` configuration option.
+To select this behavior, use the :option:`CONFIG_DESKTOP_POWER_MANAGER_STAY_ON` configuration option.
 
 Wake-up scenarios
 =================

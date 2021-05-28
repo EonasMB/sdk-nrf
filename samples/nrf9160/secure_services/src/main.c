@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <zephyr.h>
@@ -13,7 +13,7 @@
 #include <fw_info.h>
 
 #if defined(CONFIG_BOOTLOADER_MCUBOOT) || defined(CONFIG_SPM_SERVICE_RNG)
-static void print_hex_number(u8_t *num, size_t len)
+static void print_hex_number(uint8_t *num, size_t len)
 {
 	printk("0x");
 	for (int i = 0; i < len; i++) {
@@ -25,7 +25,7 @@ static void print_hex_number(u8_t *num, size_t len)
 
 
 #if defined(CONFIG_SPM_SERVICE_RNG)
-static void print_random_number(u8_t *num, size_t len)
+static void print_random_number(uint8_t *num, size_t len)
 {
 	printk("Random number len %d: ", len);
 	print_hex_number(num, len);
@@ -33,10 +33,10 @@ static void print_random_number(u8_t *num, size_t len)
 #endif
 
 
-static int read_ficr_word(u32_t *result, const volatile u32_t *addr)
+static int read_ficr_word(uint32_t *result, const volatile uint32_t *addr)
 {
-	printk("Read FICR (address 0x%08x):\n", (u32_t)addr);
-	int ret = spm_request_read(result, (u32_t)addr, sizeof(u32_t));
+	printk("Read FICR (address 0x%08x):\n", (uint32_t)addr);
+	int ret = spm_request_read(result, (uint32_t)addr, sizeof(uint32_t));
 
 	if (ret != 0) {
 		printk("Could not read FICR (err: %d)\n", ret);
@@ -60,7 +60,7 @@ void main(void)
 
 #if defined(CONFIG_SPM_SERVICE_RNG)
 	for (int i = 0; i < random_number_count; i++) {
-		u8_t random_number[random_number_len];
+		uint8_t random_number[random_number_len];
 		size_t olen = random_number_len;
 
 		ret = spm_request_random_number(random_number,
@@ -76,9 +76,9 @@ void main(void)
 	printk("CONFIG_SPM_SERVICE_RNG is disabled.\n\n");
 #endif
 
-	ret = spm_firmware_info(PM_APP_ADDRESS, &info_app);
+	ret = spm_firmware_info(PM_SPM_ADDRESS, &info_app);
 	if (ret != 0) {
-		printk("Could find firmware info (err: %d)\n", ret);
+		printk("Could not find SPM firmware info (err: %d)\n", ret);
 	}
 
 	printk("App FW version: %d\n\n", info_app.version);
@@ -86,7 +86,7 @@ void main(void)
 #ifdef CONFIG_BOOTLOADER_MCUBOOT
 	const int num_bytes_to_read = PM_MCUBOOT_PAD_SIZE;
 	const int read_address = PM_MCUBOOT_PAD_ADDRESS;
-	u8_t buf[num_bytes_to_read];
+	uint8_t buf[num_bytes_to_read];
 
 	printk("Read %d bytes from address 0x%x (MCUboot header for current "
 		"image):\n", num_bytes_to_read, read_address);
@@ -99,14 +99,19 @@ void main(void)
 	printk("\n");
 #endif
 
+#if defined(PM_S0_ADDRESS) && !defined(PM_S0_IMAGE_ADDRESS)
+	#define PM_S0_IMAGE_ADDRESS PM_S0_ADDRESS
+#endif
+
 #if defined(PM_S0_ADDRESS) && defined(CONFIG_SPM_SERVICE_PREVALIDATE)
-	int valid = spm_prevalidate_b1_upgrade(PM_S0_ADDRESS, PM_S0_ADDRESS);
+	int valid = spm_prevalidate_b1_upgrade(PM_S0_IMAGE_ADDRESS,
+		PM_S0_IMAGE_ADDRESS);
 
 	if (valid < 0 && valid != -ENOTSUP) {
 		printk("Unexpected error from spm_prevalidate_b1_upgrade: %d\n",
 			valid);
 	} else {
-		printk("S0 valid? %s\n",
+		printk("S0 (0x%x) valid? %s\n", PM_S0_IMAGE_ADDRESS,
 			valid == 1 ? "True" : valid == 0 ? "False" : "Unknown");
 	}
 	printk("\n");
@@ -115,7 +120,7 @@ void main(void)
 		"not present.\n\n");
 #endif
 
-	u32_t ficr_info = 0;
+	uint32_t ficr_info = 0;
 
 	if (read_ficr_word(&ficr_info, &NRF_FICR_S->INFO.PART) == 0) {
 		printk("FICR.INFO.PART = 0x%08X\n\n", ficr_info);
@@ -124,6 +129,18 @@ void main(void)
 	if (read_ficr_word(&ficr_info, &NRF_FICR_S->INFO.VARIANT) == 0) {
 		printk("FICR.INFO.VARIANT (+0x210) = 0x%08X\n\n", ficr_info);
 	}
+
+#ifdef PM_S1_ADDRESS
+	bool s0_active;
+
+	ret = spm_s0_active(PM_S0_ADDRESS, PM_S1_ADDRESS, &s0_active);
+	if (ret != 0) {
+		printk("Unexpected failure from spm_s0_active: %d\n", ret);
+	}
+
+	printk("S0 active? %s\n", s0_active ? "True" : "False");
+
+#endif /*  PM_S1_ADDRESS */
 
 	printk("Reboot in %d seconds.\n", sleep_time_s);
 	k_sleep(K_SECONDS(5));

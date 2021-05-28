@@ -1,6 +1,6 @@
 # Copyright (c) 2019 Nordic Semiconductor
 #
-# SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
 #
 
 menuconfig AWS_FOTA
@@ -10,6 +10,10 @@ menuconfig AWS_FOTA
 	depends on CJSON_LIB
 
 if AWS_FOTA
+
+config AWS_FOTA_UPDATE_TIMEOUT
+	int "Max amount of time in seconds to wait for a document update response"
+	default 60
 
 config AWS_FOTA_PAYLOAD_SIZE
 	int "MQTT payload reception buffer size for AWS IoT Jobs messages"
@@ -25,8 +29,7 @@ config AWS_FOTA_FILE_PATH_MAX_LEN
 
 config AWS_FOTA_DOWNLOAD_SECURITY_TAG
 	int "Security tag to be used for downloads"
-	depends on DOWNLOAD_CLIENT_TLS
-	default 42
+	default -1
 
 
 module=AWS_FOTA

@@ -3,6 +3,10 @@
 China Telecom ZZHC library
 ##########################
 
+.. contents::
+   :local:
+   :depth: 2
+
 The China Telecom ZZHC library implements the self-registration (Zi-ZHu-Ce, ZZHC) functionality that registers the module information on the server when the network is available.
 
 Overview
@@ -39,7 +43,7 @@ Configure the following option if you want to use this library:
 
 The following required options are automatically selected when the ZZHC library is enabled:
 
-* :option:`CONFIG_BSD_LIBRARY`
+* :option:`CONFIG_NRF_MODEM_LIB`
 * :option:`CONFIG_SETTINGS`
 * :option:`CONFIG_AT_CMD`
 * :option:`CONFIG_AT_CMD_PARSER`
@@ -59,7 +63,7 @@ To enable the library and ensure that the end product can be approved by China T
 Additionally, make sure to configure the following options in ``prj.conf``:
 
 * The minimal heap size required (2560 bytes): ``CONFIG_HEAP_MEM_POOL_SIZE=2560``.
-* The following options required by :option:`CONFIG_BSD_LIBRARY`:
+* The following options required by :option:`CONFIG_NRF_MODEM_LIB`:
 
   * ``CONFIG_NETWORKING=y``
   * ``CONFIG_NET_NATIVE=n``

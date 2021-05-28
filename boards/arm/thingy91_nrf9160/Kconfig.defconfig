@@ -2,44 +2,12 @@
 #
 # Copyright (c) 2018 Nordic Semiconductor ASA
 #
-# SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
 
 if BOARD_THINGY91_NRF9160 || BOARD_THINGY91_NRF9160NS
 
 config BOARD
 	default "thingy91_nrf9160"
-
-if ADC
-
-config ADC_0
-	bool
-	default y
-
-endif # ADC
-
-if I2C
-
-config I2C_2
-	bool
-	default y
-
-endif # I2C
-
-if PWM
-
-config PWM_0
-	bool
-	default y
-
-endif # PWM
-
-if SPI
-
-config SPI_3
-	bool
-	default y
-
-endif # SPI
 
 # For the secure version of the board the firmware is linked at the beginning
 # of the flash, or into the code-partition defined in DT if it is intended to

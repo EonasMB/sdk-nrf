@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <zephyr.h>
@@ -57,7 +57,7 @@ cleanup:
 }
 
 int aws_fota_parse_DescribeJobExecution_rsp(const char *job_document,
-					   u32_t payload_len,
+					   uint32_t payload_len,
 					   char *job_id_buf,
 					   char *hostname_buf,
 					   char *file_path_buf,

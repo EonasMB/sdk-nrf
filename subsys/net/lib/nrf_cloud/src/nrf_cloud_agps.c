@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <zephyr.h>
@@ -24,7 +24,7 @@ extern void agps_print(enum nrf_cloud_agps_type type, void *data);
 
 static int fd = -1;
 static bool agps_print_enabled;
-static struct device *gps_dev;
+static const struct device *gps_dev;
 
 static enum gps_agps_type type_lookup_socket2gps[] = {
 	[NRF_GNSS_AGPS_UTC_PARAMETERS]	= GPS_AGPS_UTC_PARAMETERS,
@@ -69,19 +69,62 @@ static int type_array2str(enum gps_agps_type *types, size_t type_count,
 	return 0;
 }
 
-int nrf_cloud_agps_request(enum gps_agps_type *types, size_t type_count)
+int nrf_cloud_agps_request(const struct gps_agps_request request)
 {
 	int err, len;
 	char types_str[20];
 	char types_array[30];
-	char request[250];
+	char request_buf[250];
 	struct modem_param_info modem_info = {0};
 	struct nct_dc_data msg = {
-		.data.ptr = request
+		.data.ptr = request_buf
 	};
+	enum gps_agps_type types[9];
+	size_t type_count = 0;
 
-	if (types && (type_count < 0)) {
-		return -EINVAL;
+	if (request.utc) {
+		types[type_count] = GPS_AGPS_UTC_PARAMETERS;
+		type_count += 1;
+	}
+
+	if (request.sv_mask_ephe) {
+		types[type_count] = GPS_AGPS_EPHEMERIDES;
+		type_count += 1;
+	}
+
+	if (request.sv_mask_alm) {
+		types[type_count] = GPS_AGPS_ALMANAC;
+		type_count += 1;
+	}
+
+	if (request.klobuchar) {
+		types[type_count] = GPS_AGPS_KLOBUCHAR_CORRECTION;
+		type_count += 1;
+	}
+
+	if (request.nequick) {
+		types[type_count] = GPS_AGPS_NEQUICK_CORRECTION;
+		type_count += 1;
+	}
+
+	if (request.system_time_tow) {
+		types[type_count] = GPS_AGPS_GPS_SYSTEM_CLOCK_AND_TOWS;
+		type_count += 1;
+	}
+
+	if (request.position) {
+		types[type_count] = GPS_AGPS_LOCATION;
+		type_count += 1;
+	}
+
+	if (request.integrity) {
+		types[type_count] = GPS_AGPS_INTEGRITY;
+		type_count += 1;
+	}
+
+	if (type_count == 0) {
+		LOG_INF("No A-GPS data types requested");
+		return 0;
 	}
 
 	err = modem_info_init();
@@ -102,27 +145,21 @@ int nrf_cloud_agps_request(enum gps_agps_type *types, size_t type_count)
 		return err;
 	}
 
-	if ((types == NULL) || (type_count == 0)) {
-		LOG_DBG("No A-GPS type specified, creating request for all");
-
-		types_array[0] = '\0';
-	} else {
-		err = type_array2str(types, type_count, types_str,
-				     sizeof(types_str));
-		if (err) {
-			LOG_ERR("Error when creating type array: %d", err);
-			return err;
-		}
-
-		err = snprintk(types_array, sizeof(types_array),
-			       ",\"types\":[%s]", types_str);
-		if (err < 0) {
-			LOG_ERR("Error when creating type array: %d", err);
-			return err;
-		}
+	err = type_array2str(types, type_count, types_str,
+				sizeof(types_str));
+	if (err) {
+		LOG_ERR("Error when creating type array: %d", err);
+		return err;
 	}
 
-	len = snprintk(request, sizeof(request),
+	err = snprintk(types_array, sizeof(types_array),
+			",\"types\":[%s]", types_str);
+	if (err < 0) {
+		LOG_ERR("Error when creating type array: %d", err);
+		return err;
+	}
+
+	len = snprintk(request_buf, sizeof(request_buf),
 		"{"
 			"\"appId\":\"AGPS\","
 			"\"messageType\":\"DATA\","
@@ -138,7 +175,7 @@ int nrf_cloud_agps_request(enum gps_agps_type *types, size_t type_count)
 		modem_info.network.mcc.value,
 		modem_info.network.mnc.value,
 		modem_info.network.area_code.value,
-		(u32_t)modem_info.network.cellid_dec,
+		(uint32_t)modem_info.network.cellid_dec,
 		types_array);
 
 	if (len < 0) {
@@ -146,7 +183,7 @@ int nrf_cloud_agps_request(enum gps_agps_type *types, size_t type_count)
 		return len;
 	}
 
-	LOG_DBG("Created A-GPS request: %s", log_strdup(request));
+	LOG_DBG("Created A-GPS request: %s", log_strdup(request_buf));
 
 	msg.data.len = len;
 
@@ -163,7 +200,17 @@ int nrf_cloud_agps_request(enum gps_agps_type *types, size_t type_count)
 
 int nrf_cloud_agps_request_all(void)
 {
-	return nrf_cloud_agps_request(NULL, 0);
+	struct gps_agps_request request = {
+		.sv_mask_ephe = 0xFFFFFFFF,
+		.sv_mask_alm = 0xFFFFFFFF,
+		.utc = 1,
+		.klobuchar = 1,
+		.system_time_tow = 1,
+		.position = 1,
+		.integrity = 1,
+	};
+
+	return nrf_cloud_agps_request(request);
 }
 
 /* Convert nrf_socket A-GPS type to GPS API type. */
@@ -384,7 +431,7 @@ static int agps_send_to_modem(struct nrf_cloud_apgs_element *agps_data)
 		LOG_DBG("A-GPS type: NRF_CLOUD_AGPS_KLOBUCHAR_CORRECTION");
 
 		return send_to_modem(&klobuchar, sizeof(klobuchar),
-				NRF_CLOUD_AGPS_KLOBUCHAR_CORRECTION);
+				NRF_GNSS_AGPS_KLOBUCHAR_IONOSPHERIC_CORRECTION);
 	}
 	case NRF_CLOUD_AGPS_GPS_SYSTEM_CLOCK: {
 		nrf_gnss_agps_data_system_time_and_sv_tow_t time_and_tow;
@@ -421,7 +468,7 @@ static int agps_send_to_modem(struct nrf_cloud_apgs_element *agps_data)
 static size_t get_next_agps_element(struct nrf_cloud_apgs_element *element,
 				    const char *buf)
 {
-	static u16_t elements_left_to_process;
+	static uint16_t elements_left_to_process;
 	static enum nrf_cloud_agps_type element_type;
 	size_t len = 0;
 
@@ -434,7 +481,7 @@ static size_t get_next_agps_element(struct nrf_cloud_apgs_element *element,
 			(enum nrf_cloud_agps_type)buf[NRF_CLOUD_AGPS_BIN_TYPE_OFFSET];
 		element_type = element->type;
 		elements_left_to_process =
-			*(u16_t *)&buf[NRF_CLOUD_AGPS_BIN_COUNT_OFFSET] - 1;
+			*(uint16_t *)&buf[NRF_CLOUD_AGPS_BIN_COUNT_OFFSET] - 1;
 		len += NRF_CLOUD_AGPS_BIN_TYPE_SIZE +
 			NRF_CLOUD_AGPS_BIN_COUNT_SIZE;
 	} else {
@@ -494,7 +541,7 @@ int nrf_cloud_agps_process(const char *buf, size_t buf_len, const int *socket)
 	struct nrf_cloud_apgs_element element = {};
 	struct nrf_cloud_agps_system_time sys_time;
 	size_t parsed_len = 0;
-	u8_t version;
+	uint8_t version;
 
 	version = buf[NRF_CLOUD_AGPS_BIN_SCHEMA_VERSION_INDEX];
 	parsed_len += NRF_CLOUD_AGPS_BIN_SCHEMA_VERSION_SIZE;

@@ -3,6 +3,10 @@
 Installing the |NCS| manually
 #############################
 
+.. contents::
+   :local:
+   :depth: 2
+
 The recommended way to get started with the |NCS| is to use nRF Connect for Desktop.
 See the :ref:`gs_assistant` section for information about how to install the |NCS| through nRF Connect for Desktop.
 
@@ -50,6 +54,64 @@ The installation process is different depending on your operating system.
       Install Homebrew and install the required tools using the ``brew`` command line tool.
 
       Also see :ref:`zephyr:mac-setup-alts` for additional information.
+
+If you are interested in building `Project Connected Home over IP`_ applications, install also the `GN`_ meta-build system to generate the Ninja files that the |NCS| uses.
+
+.. tabs::
+
+   .. group-tab:: Windows
+
+      To install the GN tool, complete the following steps:
+
+      1. Download the latest version of the GN binary archive for Windows from the `GN website`_.
+      2. Extract the :file:`zip` archive.
+      3. Ensure that the GN tool is added to your :envvar:`PATH` :ref:`environment variable <zephyr:env_vars>`.
+
+   .. group-tab:: Linux
+
+      To install the GN tool, complete the following steps:
+
+      1. Download the GN binary archive and extract it by using the following commands:
+
+         .. parsed-literal::
+            :class: highlight
+
+            mkdir ${HOME}/gn && cd ${HOME}/gn
+            wget -O gn.zip https:\ //chrome-infra-packages.appspot.com/dl/gn/gn/linux-amd64/+/latest
+            unzip gn.zip
+            rm gn.zip
+
+      #. Add the location of the GN tool to the system PATH.
+         For example, if you are using ``bash``, run the following commands:
+
+         .. parsed-literal::
+            :class: highlight
+
+            echo 'export PATH=${HOME}/gn:"$PATH"' >> ${HOME}/.bashrc
+            source ${HOME}/.bashrc
+
+   .. group-tab:: macOS
+
+      To install the GN tool, complete the following steps:
+
+      1. Download the GN binary archive and extract it by using the following commands:
+
+         .. parsed-literal::
+            :class: highlight
+
+            mkdir ${HOME}/gn && cd ${HOME}/gn
+            wget -O gn.zip https:\ //chrome-infra-packages.appspot.com/dl/gn/gn/mac-amd64/+/latest
+            unzip gn.zip
+            rm gn.zip
+
+      #. Add the location of the GN tool to the system PATH.
+         For example, if you are using ``bash``, run the following commands:
+
+         .. parsed-literal::
+            :class: highlight
+
+            echo 'export PATH=${HOME}/gn:"$PATH"' >> ${HOME}/.bashrc
+            source ${HOME}/.bashrc
 
 .. _gs_installing_toolchain:
 
@@ -214,7 +276,6 @@ Therefore, remember to regularly check for updates:
 
          pip3 install -U west
 
-
 Cloning the repositories
 ========================
 
@@ -229,7 +290,7 @@ To clone the repositories, complete the following steps:
 #. Determine what revision of the |NCS| you want to work with.
    The recommended way is to work with a specific release.
 
-   * To work with a specific release, the revision is the corresponding tag (for example, ``v1.3.0``).
+   * To work with a specific release, the revision is the corresponding tag (for example, |release_tt|).
      You can find the tag in the :ref:`release_notes` of the release.
    * To work with a development tag, the revision is the corresponding tag (for example, ``v1.2.99-dev1``)
    * To work with a branch, the revision is the branch name (for example, ``master`` to work with the latest state of development).
@@ -242,9 +303,12 @@ To clone the repositories, complete the following steps:
 
       west init -m https\://github.com/nrfconnect/sdk-nrf --mr *NCS_revision*
 
-   For example, to check out the v1.3.0 release, enter the following command::
+   For example, to check out the |release| release, enter the following command:
 
-     west init -m https://github.com/nrfconnect/sdk-nrf --mr v1.3.0
+   .. parsed-literal::
+      :class: highlight
+
+      west init -m https\://github.com/nrfconnect/sdk-nrf --mr |release|
 
    To check out the latest state of development, enter the following command::
 
@@ -306,10 +370,13 @@ Running ``west update`` will then update the project repositories to the state s
    :start-after: west-error-start
    :end-before: west-error-end
 
-For example, to switch to release v1.3.0 of the |NCS|, enter the following commands in the ``ncs/nrf`` directory::
+For example, to switch to release |release| of the |NCS|, enter the following commands in the ``ncs/nrf`` directory:
+
+.. parsed-literal::
+   :class: highlight
 
    git fetch origin
-   git checkout v1.3.0
+   git checkout |release|
    west update
 
 To update to a particular revision (SHA), make sure that you have that particular revision locally before you check it out (by running ``git fetch origin``)::
@@ -346,21 +413,27 @@ The full list of repositories with their old and new URLs can be found in the fo
 
    * - Old URL
      - New URL
+     - File system path
 
-   * - https://github.com/NordicPlayground/fw-nrfconnect-nrf
+   * - https:\ //github.com/NordicPlayground/fw-nrfconnect-nrf
      - https://github.com/nrfconnect/sdk-nrf
+     - :file:`ncs/nrf`
 
-   * - https://github.com/NordicPlayground/fw-nrfconnect-zephyr
+   * - https:\ //github.com/NordicPlayground/fw-nrfconnect-zephyr
      - https://github.com/nrfconnect/sdk-zephyr
+     - :file:`ncs/zephyr`
 
-   * - https://github.com/NordicPlayground/fw-nrfconnect-mcuboot
+   * - https:\ //github.com/NordicPlayground/fw-nrfconnect-mcuboot
      - https://github.com/nrfconnect/sdk-mcuboot
+     - :file:`ncs/bootloader/mcuboot`
 
-   * - https://github.com/NordicPlayground/fw-nrfconnect-mcumgr
+   * - https:\ //github.com/NordicPlayground/fw-nrfconnect-mcumgr
      - https://github.com/nrfconnect/sdk-mcumgr
+     - :file:`ncs/modules/lib/mcumgr`
 
-   * - https://github.com/NordicPlayground/nrfxlib
+   * - https:\ //github.com/NordicPlayground/nrfxlib
      - https://github.com/nrfconnect/sdk-nrfxlib
+     - :file:`ncs/nrfxlib`
 
 
 Before you change the remotes, rename any personal forks that you have of the
@@ -372,10 +445,10 @@ For example, to rename the fw-nrfconnect-nrf repository, access your fork on Git
 Then rename the actual remotes.
 To do so, go to your local copy of each of the repositories listed in the table above and enter the following command:
 
-    .. parsed-literal::
-       :class: highlight
+.. parsed-literal::
+   :class: highlight
 
-       git remote set-url *remote_name* *new_url*
+   git remote set-url *remote_name* *new_url*
 
 Replace *remote_name* with the name of your remote (for example, ``origin`` for your fork or ``ncs`` for the upstream repository) and *new_url* with the URL of your fork or the new URL from the table above.  If you are unsure about the remotes that are configured in your local repository, enter ``git remote -v``.
 
@@ -389,7 +462,7 @@ Similarly, to point your existing fw-nrfconnect-zephyr clone to the new URL, ent
     cd ncs/zephyr
     git remote set-url ncs https://github.com/nrfconnect/sdk-zephyr
 
-Additional information about remotes and how to handle them can be found in :ref:`dm-user-workflow`.
+Additional information about remotes and how to handle them can be found in :ref:`dm-wf-fork`.
 
 .. _additional_deps:
 
@@ -499,10 +572,12 @@ Setting up the build environment
 
 Before you start :ref:`building and programming a sample application <gs_programming>`, you must set up your build environment.
 
+.. _setting_up_SES:
+
 Setting up the SES environment
 ==============================
 
-If you plan to :ref:`build with SEGGER Embedded Studio <gs_programming_ses>`, the first time you import an |NCS| project, SES will prompt you to set the paths to the Zephyr Base directory and the GNU ARM Embedded Toolchain.
+If you plan to :ref:`build with SEGGER Embedded Studio <gs_programming_ses>`, the first time you import an |NCS| project, SES might prompt you to set the paths to the Zephyr Base directory and the GNU ARM Embedded Toolchain.
 This must be done only once.
 
 Complete the following steps to set up the |SES| environment:
@@ -618,5 +693,5 @@ Define the required environment variables as follows, depending on your operatin
       This file is loaded automatically when you run the above command.
 
 You must also make sure that nrfjprog (part of the `nRF Command Line Tools`_) is installed and its path is added to the environment variables.
-The west command programs the board by using nrfjprog by default.
-For more information on nrfjprog, see `programming development boards using nrfjprog <Programming DK boards using nrfjprog_>`_.
+The west command programs the kit by using nrfjprog by default.
+For more information on nrfjprog, see `Programming SoCs with nrfjprog`_.

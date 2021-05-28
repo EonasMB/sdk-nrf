@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2018 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <zephyr/types.h>
@@ -27,12 +27,13 @@ LOG_MODULE_REGISTER(MODULE, CONFIG_DESKTOP_BLE_SCANNING_LOG_LEVEL);
 	(CONFIG_DESKTOP_BLE_SCAN_START_TIMEOUT_S * MSEC_PER_SEC)
 #define SCAN_DURATION_MS \
 	(CONFIG_DESKTOP_BLE_SCAN_DURATION_S * MSEC_PER_SEC)
+#define SCAN_START_DELAY_MS   15
 
 #define SUBSCRIBED_PEERS_STORAGE_NAME "subscribers"
 
 struct subscriber_data {
-	u8_t conn_count;
-	u8_t peer_count;
+	uint8_t conn_count;
+	uint8_t peer_count;
 };
 
 struct subscribed_peer {
@@ -162,7 +163,7 @@ static void scan_stop(void)
 	}
 }
 
-static int configure_address_filters(u8_t *filter_mode)
+static int configure_address_filters(uint8_t *filter_mode)
 {
 	size_t i;
 	int err = 0;
@@ -198,18 +199,28 @@ static int configure_address_filters(u8_t *filter_mode)
 	return err;
 }
 
-static int configure_name_filters(u8_t *filter_mode)
+static int configure_name_filters(uint8_t *filter_mode)
 {
-	u8_t peers_mask = 0;
+	uint8_t peer_cnt[PEER_TYPE_COUNT] = {0};
+	static const uint8_t peer_limit[PEER_TYPE_COUNT] = {
+		[PEER_TYPE_MOUSE] = CONFIG_DESKTOP_BLE_SCAN_MOUSE_LIMIT,
+		[PEER_TYPE_KEYBOARD] = CONFIG_DESKTOP_BLE_SCAN_KEYBOARD_LIMIT,
+	};
 	int err = 0;
 
 	for (size_t i = 0; i < ARRAY_SIZE(subscribed_peers); i++) {
-		peers_mask |= BIT(subscribed_peers[i].peer_type);
+		enum peer_type type = subscribed_peers[i].peer_type;
+
+		if (type == PEER_TYPE_COUNT) {
+			continue;
+		}
+		__ASSERT_NO_MSG(peer_cnt[type] < peer_limit[type]);
+		peer_cnt[type]++;
 	}
 
 	/* Bluetooth scan filters are defined in separate header. */
 	for (size_t i = 0; i < ARRAY_SIZE(peer_name); i++) {
-		if ((BIT(i) & peers_mask) ||
+		if ((peer_cnt[i] == peer_limit[i]) ||
 		    (peer_name[i] == NULL)) {
 			continue;
 		}
@@ -232,7 +243,7 @@ static int configure_name_filters(u8_t *filter_mode)
 
 static int configure_filters(void)
 {
-	BUILD_ASSERT(CONFIG_BT_MAX_PAIRED == CONFIG_BT_MAX_CONN, "");
+	BUILD_ASSERT(CONFIG_BT_MAX_PAIRED >= CONFIG_BT_MAX_CONN, "");
 	BUILD_ASSERT(CONFIG_BT_MAX_PAIRED <= CONFIG_BT_SCAN_ADDRESS_CNT,
 			 "Insufficient number of address filters");
 	BUILD_ASSERT(ARRAY_SIZE(peer_name) <= CONFIG_BT_SCAN_NAME_CNT,
@@ -240,7 +251,7 @@ static int configure_filters(void)
 	BUILD_ASSERT(ARRAY_SIZE(peer_name) == PEER_TYPE_COUNT, "");
 	bt_scan_filter_remove_all();
 
-	u8_t filter_mode = 0;
+	uint8_t filter_mode = 0;
 	int err = configure_address_filters(&filter_mode);
 
 	bool use_name_filters = true;
@@ -267,6 +278,8 @@ static int configure_filters(void)
 static bool is_llpm_peer_connected(void)
 {
 	bool llpm_peer_connected = false;
+
+	__ASSERT_NO_MSG(IS_ENABLED(CONFIG_DESKTOP_BLE_USE_LLPM));
 
 	for (size_t i = 0; i < ARRAY_SIZE(subscribed_peers); i++) {
 		if (!bt_addr_le_cmp(&subscribed_peers[i].addr, BT_ADDR_LE_NONE)) {
@@ -316,6 +329,10 @@ static void scan_start(void)
 	size_t bond_count = count_bond();
 	int err;
 
+	if (scanning) {
+		scan_stop();
+	}
+
 	if (IS_ENABLED(CONFIG_DESKTOP_BLE_NEW_PEER_SCAN_REQUEST) &&
 	    (conn_count == bond_count) && peers_only) {
 		LOG_INF("All known peers connected - scanning disabled");
@@ -328,11 +345,13 @@ static void scan_start(void)
 		return;
 	}
 
-	if (IS_ENABLED(CONFIG_BT_LL_NRFXLIB)) {
-		if (scanning) {
-			scan_stop();
-		}
-
+	if (IS_ENABLED(CONFIG_DESKTOP_BLE_USE_LLPM) &&
+	    (CONFIG_BT_MAX_CONN == 2)) {
+		/* If the central supports the LLPM and more than two
+		 * simultaneous Bluetooth connections, the BLE peers use the
+		 * connection interval of 10 ms instead of 7.5 ms and there is
+		 * no need to update the initial connection parameters.
+		 */
 		update_init_conn_params(is_llpm_peer_connected());
 	}
 
@@ -343,9 +362,7 @@ static void scan_start(void)
 	}
 
 	err = bt_scan_start(BT_SCAN_TYPE_SCAN_ACTIVE);
-	if (err == -EALREADY) {
-		LOG_WRN("Scanning already enabled");
-	} else if (err) {
+	if (err) {
 		LOG_ERR("Cannot start scanning (err %d)", err);
 		goto error;
 	} else {
@@ -395,18 +412,20 @@ static void scan_filter_match(struct bt_scan_device_info *device_info,
 {
 	char addr[BT_ADDR_LE_STR_LEN];
 
-	bt_addr_le_to_str(device_info->addr, addr, sizeof(addr));
+	bt_addr_le_to_str(device_info->recv_info->addr, addr, sizeof(addr));
 
 	LOG_INF("Filters matched. %s %sconnectable",
 		log_strdup(addr), connectable ? "" : "non");
 
-	scan_stop();
+	/* Scanning will be stopped by nrf scan module. */
 }
 
 static void scan_connecting_error(struct bt_scan_device_info *device_info)
 {
 	LOG_WRN("Connecting failed");
-	scan_start();
+	scan_counter = SCAN_TRIG_TIMEOUT_MS;
+	k_delayed_work_submit(&scan_start_trigger,
+			      K_MSEC(SCAN_START_DELAY_MS));
 }
 
 static void scan_connecting(struct bt_scan_device_info *device_info,
@@ -452,20 +471,27 @@ static void scan_init(void)
 	reset_subscribers();
 
 	static const struct bt_le_scan_param sp = {
-		.type = BT_HCI_LE_SCAN_ACTIVE,
-		.filter_dup = BT_HCI_LE_SCAN_FILTER_DUP_ENABLE,
+		.type = BT_LE_SCAN_TYPE_ACTIVE,
+		.options = BT_LE_SCAN_OPT_FILTER_DUPLICATE,
 		.interval = BT_GAP_SCAN_FAST_INTERVAL,
 		.window = BT_GAP_SCAN_FAST_WINDOW,
 	};
 
-	static const struct bt_le_conn_param cp = {
-		.interval_min = 6,
-		.interval_max = 6,
+	struct bt_le_conn_param cp = {
 		.latency = 0,
 		.timeout = 400,
 	};
 
-	static const struct bt_scan_init_param scan_init = {
+	if (IS_ENABLED(CONFIG_DESKTOP_BLE_USE_LLPM) &&
+	    (CONFIG_BT_MAX_CONN > 2)) {
+		cp.interval_min = 8;
+		cp.interval_max = 8;
+	} else {
+		cp.interval_min = 6;
+		cp.interval_max = 6;
+	}
+
+	struct bt_scan_init_param scan_init = {
 		.connect_if_match = true,
 		.scan_param = &sp,
 		.conn_param = &cp,
@@ -506,11 +532,6 @@ static bool event_handler(const struct event_header *eh)
 
 			module_set_state(MODULE_STATE_READY);
 		} else if (check_state(event, MODULE_ID(ble_bond), MODULE_STATE_READY)) {
-			static bool started;
-
-			__ASSERT_NO_MSG(!started);
-			started = true;
-
 			/* Settings need to be loaded before scan start */
 			scan_start();
 		}
@@ -534,12 +555,12 @@ static bool event_handler(const struct event_header *eh)
 				bt_conn_unref(discovering_peer_conn);
 				discovering_peer_conn = NULL;
 			}
-			scan_stop();
 			/* ble_state keeps reference to connection object.
 			 * Cannot create new connection now.
 			 */
-			k_delayed_work_submit(&scan_start_trigger, K_NO_WAIT);
 			scan_counter = SCAN_TRIG_TIMEOUT_MS;
+			k_delayed_work_submit(&scan_start_trigger,
+					      K_MSEC(SCAN_START_DELAY_MS));
 			break;
 		default:
 			__ASSERT_NO_MSG(false);
@@ -557,14 +578,19 @@ static bool event_handler(const struct event_header *eh)
 			reset_subscribers();
 			store_subscribed_peers();
 			if (count_conn() == CONFIG_BT_MAX_CONN) {
+				if (IS_ENABLED(CONFIG_BT_SCAN_CONN_ATTEMPTS_FILTER)) {
+					bt_scan_conn_attempts_filter_clear();
+				}
 				peers_only = false;
 				break;
 			}
 			/* Fall-through */
 
 		case PEER_OPERATION_SCAN_REQUEST:
+			if (IS_ENABLED(CONFIG_BT_SCAN_CONN_ATTEMPTS_FILTER)) {
+				bt_scan_conn_attempts_filter_clear();
+			}
 			peers_only = false;
-			scan_stop();
 			scan_start();
 			break;
 
@@ -619,6 +645,10 @@ static bool event_handler(const struct event_header *eh)
 		k_delayed_work_submit(&scan_start_trigger,
 				      K_MSEC(SCAN_TRIG_TIMEOUT_MS));
 		scan_counter = SCAN_TRIG_TIMEOUT_MS;
+
+		if (IS_ENABLED(CONFIG_BT_SCAN_CONN_ATTEMPTS_FILTER)) {
+			bt_scan_conn_attempts_filter_clear();
+		}
 
 		return false;
 	}

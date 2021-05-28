@@ -3,6 +3,10 @@
 nRF9160: Cloud client
 #####################
 
+.. contents::
+   :local:
+   :depth: 2
+
 This sample connects to, and communicates with a compatible cloud service using the respective cloud backend firmware library.
 The sample connects via cellular network (LTE) and publishes a custom string in intervals or upon a button trigger, to the cloud service.
 
@@ -14,6 +18,7 @@ The current version of the sample supports the following libraries as cloud back
 
 *  :ref:`lib_nrf_cloud`
 *  :ref:`lib_aws_iot`
+*  :ref:`lib_azure_iot_hub`
 
 To swap between the supported libraries, change the option :option:`CONFIG_CLOUD_BACKEND` to match the configuration string of a compatible cloud backend.
 The identification strings for the different cloud backends are listed in the following table:
@@ -24,29 +29,31 @@ The identification strings for the different cloud backends are listed in the fo
 
    * - Cloud Backend
      - Configuration String
-   * - NRF Cloud
-     - NRF_CLOUD
+   * - nRF Connect for Cloud
+     - "NRF_CLOUD"
    * - AWS IoT
-     - AWS_IOT
+     - "AWS_IOT"
+   * - Azure IoT Hub
+     - "AZURE_IOT_HUB"
 
 Requirements
 ************
 
 The sample supports the following development kits:
 
-.. include:: /includes/boardname_tables/sample_boardnames.txt
-   :start-after: set6_start
-   :end-before: set6_end
+.. table-from-rows:: /includes/sample_board_rows.txt
+   :header: heading
+   :sample-yaml-rows:
 
 Setup
 *****
 
-For configuring the different cloud backends, refer to the documentation on :ref:`lib_nrf_cloud` and :ref:`lib_aws_iot`.
+For configuring the different cloud backends, refer to the documentation on :ref:`lib_nrf_cloud`, :ref:`lib_aws_iot`, and :ref:`lib_azure_iot_hub`.
 Each cloud backend has specific setup steps that must be executed before it can be used.
 
 .. note::
-   The nRF9160 DK and Thingy:91 come pre-flashed with the certificates required for a connection to `nRF Cloud`_.
-   No extra steps are required to use the Cloud client sample with nRF Cloud.
+   The nRF9160 DK and Thingy:91 come preprogrammed with the certificates required for a connection to `nRF Connect for Cloud`_.
+   No extra steps are required to use the Cloud client sample with nRF Connect for Cloud.
 
 
 Configurations
@@ -54,29 +61,20 @@ Configurations
 
 The configurations used in the sample are listed below. They can be added to ``cloud_client/prj.conf``.
 
-
-.. option:: CONFIG_CLOUD_BACKEND
-
-Decides the cloud backend to be used.
-
-.. option:: CONFIG_CLOUD_PUBLICATION_SEQUENTIAL
-
-Publishes a message to cloud sequentially.
-
-.. option:: CONFIG_CLOUD_PUBLICATION_BUTTON_PRESS
-
-Publishes a message to cloud upon a button press.
-
-.. option:: CONFIG_CLOUD_MESSAGE
-
-Modifies the message published to the cloud service.
-
-.. option:: CONFIG_CLOUD_MESSAGE_PUBLICATION_INTERVAL
-
-Modifies the interval within which the message is published to the cloud service.
+.. options-from-kconfig::
+   :prefix: "This option "
+   :suffix: .
+   :show-type:
+   :only-visible:
 
 .. note::
-   To output data in the terminal window located in the `nRF Cloud`_ web interface, the data format must be in JSON format.
+   To output data in the terminal window located in the `nRF Connect for Cloud`_ web interface, the data format must be in JSON format.
+
+.. note::
+   The sample sets the option :option:`CONFIG_MQTT_KEEPALIVE` to the maximum allowed value that is specified by the configured cloud backend.
+   This is to limit the IP traffic between the device and the message broker of the cloud provider for supporting a low power sample.
+   However, note that in certain LTE networks, the NAT timeout can be considerably lower than the maximum allowed MQTT keepalive.
+   So as a recommendation, and to prevent the likelihood of getting disconnected unexpectedly, the option :option:`CONFIG_MQTT_KEEPALIVE` must be set to the lowest of the aforementioned timeout limits (Maximum allowed MQTT keepalive and NAT timeout).
 
 Functionality and Supported Technologies
 ****************************************
@@ -87,38 +85,38 @@ Functions
 =========
 The sample uses the following functions:
 
-* :cpp:func:`cloud_get_binding()` : Binds to a desired cloud backend using an identifiable string.
+* :c:func:`cloud_get_binding` : Binds to a desired cloud backend using an identifiable string.
 
 
-* :cpp:func:`cloud_init()` : Sets up the cloud connection.
+* :c:func:`cloud_init` : Sets up the cloud connection.
 
 
-* :cpp:func:`cloud_connect()` : Connects to the cloud service.
+* :c:func:`cloud_connect` : Connects to the cloud service.
 
 
-* :cpp:func:`cloud_ping()` : Pings the cloud service.
+* :c:func:`cloud_ping` : Pings the cloud service.
 
 
-* :cpp:func:`cloud_input()` : Retrieves data from the cloud service.
+* :c:func:`cloud_input` : Retrieves data from the cloud service.
 
 
-* :cpp:func:`cloud_send()` : Sends data to the cloud service.
+* :c:func:`cloud_send` : Sends data to the cloud service.
 
 
 Cloud events used in the sample
 ===============================
 The sample uses the following cloud events:
 
-* :cpp:enumerator:`CLOUD_EVT_CONNECTED <cloud_api::CLOUD_EVT_CONNECTED>` : Connected to the cloud service.
+* :c:enumerator:`CLOUD_EVT_CONNECTED` : Connected to the cloud service.
 
 
-* :cpp:enumerator:`CLOUD_EVT_READY<cloud_api::CLOUD_EVT_READY>` : Ready for cloud communication.
+* :c:enumerator:`CLOUD_EVT_READY` : Ready for cloud communication.
 
 
-* :cpp:enumerator:`CLOUD_EVT_DISCONNECTED<cloud_api::CLOUD_EVT_DISCONNECTED>` : Disconnected from the cloud service.
+* :c:enumerator:`CLOUD_EVT_DISCONNECTED` : Disconnected from the cloud service.
 
 
-* :cpp:enumerator:`CLOUD_EVT_DATA_RECEIVED<cloud_api::CLOUD_EVT_DATA_RECEIVED>` : Data received from the cloud service.
+* :c:enumerator:`CLOUD_EVT_DATA_RECEIVED` : Data received from the cloud service.
 
 .. note::
    Not all functionalities present in the generic cloud API are used by the different cloud backends.
@@ -133,10 +131,10 @@ Building and running
 Testing
 =======
 
-Before testing, ensure that your device is already set up with your nRF Cloud account.
+Before testing, ensure that your device is already set up with your nRF Connect for Cloud account.
 After programming the sample to your device, test it by performing the following steps:
 
-1. Open a web browser and navigate to the correct device in `nRF Cloud`_.
+1. Open a web browser and navigate to the correct device in `nRF Connect for Cloud`_.
 #. Connect the USB cable and power on or reset your device.
 #. Open a terminal emulator and observe that the sample has started.
    Wait until the "I: CLOUD_EVT_READY" status appears in the terminal.
@@ -157,7 +155,7 @@ After programming the sample to your device, test it by performing the following
       I: CLOUD_EVT_PAIR_DONE
       I: CLOUD_EVT_READY
 
-    The device is now connected to nRF Cloud.
+    The device is now connected to nRF Connect for Cloud.
 
 #. Press button 1 on the device and observe that the following output is displayed in the terminal:
 
@@ -166,7 +164,7 @@ After programming the sample to your device, test it by performing the following
       I: Publishing message: {"state":{"reported":{"message":"Hello Internet of Things!"}}}
       +CSCON: 1
 
-#. Observe that the following status appears in the terminal pane for the connected device in nRF Cloud:
+#. Observe that the following status appears in the terminal pane for the connected device in nRF Connect for Cloud:
 
    .. code-block:: console
 
@@ -189,9 +187,12 @@ This sample uses the following |NCS| libraries and drivers:
 * :ref:`lib_aws_iot`
 * :ref:`dk_buttons_and_leds_readme`
 * :ref:`cloud_api_readme`
-* ``lib/bsd_lib``
-* ``lib/lte_link_control``
+* :ref:`lte_lc_readme`
 
-In addition, it uses the Secure Partition Manager sample:
+It uses the following `sdk-nrfxlib`_ library:
+
+* :ref:`nrfxlib:nrf_modem`
+
+In addition, it uses the following sample:
 
 * :ref:`secure_partition_manager`

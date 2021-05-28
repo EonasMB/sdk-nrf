@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <soc.h>
@@ -9,6 +9,7 @@
 #include <pm_config.h>
 #include <fw_info.h>
 #include <fprotect.h>
+#include <hal/nrf_clock.h>
 #ifdef CONFIG_UART_NRFX
 #ifdef CONFIG_UART_0_NRF_UART
 #include <hal/nrf_uart.h>
@@ -28,10 +29,11 @@ static void uninit_used_peripherals(void)
 #elif defined(CONFIG_UART_2_NRF_UARTE)
 	nrf_uarte_disable(NRF_UARTE2);
 #endif
+	nrf_clock_int_disable(NRF_CLOCK, 0xFFFFFFFF);
 }
 
 #ifdef CONFIG_SW_VECTOR_RELAY
-extern u32_t _vector_table_pointer;
+extern uint32_t _vector_table_pointer;
 #define VTOR _vector_table_pointer
 #else
 #define VTOR SCB->VTOR
@@ -39,12 +41,16 @@ extern u32_t _vector_table_pointer;
 
 void bl_boot(const struct fw_info *fw_info)
 {
-#if !(defined(CONFIG_SOC_NRF9160) || defined(CONFIG_SOC_NRF5340_CPUAPP))
+#if !(defined(CONFIG_SOC_NRF9160) \
+      || defined(CONFIG_SOC_NRF5340_CPUNET) \
+      || defined(CONFIG_SOC_NRF5340_CPUAPP))
 	/* Protect bootloader storage data after firmware is validated so
 	 * invalidation of public keys can be written into the page if needed.
 	 * Note that for some devices (for example, nRF9160 and the nRF5340
 	 * application core), the bootloader storage data is kept in OTP which
-	 * does not need or support protection.
+	 * does not need or support protection. For nRF5340 network core the
+	 * bootloader storage data is locked together with the network core
+	 * application.
 	 */
 	int err = fprotect_area(PM_PROVISION_ADDRESS, PM_PROVISION_SIZE);
 
@@ -59,22 +65,23 @@ void bl_boot(const struct fw_info *fw_info)
 			"Not in Privileged mode");
 #endif
 
+	printk("Booting (0x%x).\r\n", fw_info->address);
+
+	uninit_used_peripherals();
+
 	/* Allow any pending interrupts to be recognized */
 	__ISB();
 	__disable_irq();
 	NVIC_Type *nvic = NVIC;
 	/* Disable NVIC interrupts */
-	for (u8_t i = 0; i < ARRAY_SIZE(nvic->ICER); i++) {
+	for (uint8_t i = 0; i < ARRAY_SIZE(nvic->ICER); i++) {
 		nvic->ICER[i] = 0xFFFFFFFF;
 	}
 	/* Clear pending NVIC interrupts */
-	for (u8_t i = 0; i < ARRAY_SIZE(nvic->ICPR); i++) {
+	for (uint8_t i = 0; i < ARRAY_SIZE(nvic->ICPR); i++) {
 		nvic->ICPR[i] = 0xFFFFFFFF;
 	}
 
-	printk("Booting (0x%x).\r\n", fw_info->address);
-
-	uninit_used_peripherals();
 
 	SysTick->CTRL = 0;
 
@@ -95,11 +102,20 @@ void bl_boot(const struct fw_info *fw_info)
 	__ISB(); /* Flush and refill pipeline with updated permissions */
 
 	VTOR = fw_info->address;
-	u32_t *vector_table = (u32_t *)fw_info->address;
+	uint32_t *vector_table = (uint32_t *)fw_info->address;
 
 	if (!fw_info_ext_api_provide(fw_info, true)) {
 		return;
 	}
+
+#if defined(CONFIG_BUILTIN_STACK_GUARD) && \
+    defined(CONFIG_CPU_CORTEX_M_HAS_SPLIM)
+	/* Reset limit registers to avoid inflicting stack overflow on image
+	 * being booted.
+	 */
+	__set_PSPLIM(0);
+	__set_MSPLIM(0);
+#endif
 
 	/* Set MSP to the new address and clear any information from PSP */
 	__set_MSP(vector_table[0]);

@@ -99,7 +99,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'Zephyr Project'
-copyright = u'2015-2020 Zephyr Project members and individual contributors.'
+copyright = u'2015-2021 Zephyr Project members and individual contributors'
 author = u'The Zephyr Project'
 
 # The following code tries to extract the information by reading the Makefile,
@@ -308,6 +308,11 @@ breathe_projects = {
     "doc-examples": "{}/doxygen/xml".format(ZEPHYR_BUILD)
 }
 breathe_default_project = "Zephyr"
+breathe_domain_by_extension = {
+    "h": "c",
+    "c": "c",
+}
+breathe_separate_member_pages = True
 
 # Qualifiers to a function are causing Sphihx/Breathe to warn about
 # Error when parsing function declaration and more.  This is a list
@@ -316,6 +321,7 @@ breathe_default_project = "Zephyr"
 cpp_id_attributes = ['__syscall', '__syscall_inline', '__deprecated',
     '__may_alias', '__used', '__unused', '__weak',
     '__DEPRECATED_MACRO', 'FUNC_NORETURN' ]
+c_id_attributes = cpp_id_attributes
 
 # docs_title is used in the breadcrumb title in the zephyr docs theme
 html_context = {
@@ -341,6 +347,7 @@ linkcheck_workers = 10
 linkcheck_anchors = False
 
 def setup(app):
-    app.add_stylesheet("zephyr-custom.css")
-    app.add_stylesheet("css/zephyr.css")
-    app.add_stylesheet("css/common.css")
+    app.add_css_file("zephyr-custom.css")
+    app.add_css_file("css/common.css")
+    app.add_css_file("css/zephyr.css")
+    app.add_js_file("js/ncs.js")

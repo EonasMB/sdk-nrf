@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2018 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <zephyr.h>
@@ -25,7 +25,7 @@ static int port_setup(const char *name,
 		      const struct pin_state pin_state[],
 		      size_t cnt)
 {
-	struct device *gpio_dev = device_get_binding(name);
+	const struct device *gpio_dev = device_get_binding(name);
 	int err = 0;
 
 	if (!gpio_dev) {

@@ -1,14 +1,14 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <string.h>
 #include <zephyr.h>
 #include <stdlib.h>
 #include <net/socket.h>
-#include <modem/bsdlib.h>
+#include <modem/nrf_modem_lib.h>
 #include <net/tls_credentials.h>
 #include <modem/lte_lc.h>
 #include <modem/at_cmd.h>
@@ -65,7 +65,7 @@ int cert_provision(void)
 {
 	int err;
 	bool exists;
-	u8_t unused;
+	uint8_t unused;
 
 	err = modem_key_mgmt_exists(TLS_SEC_TAG,
 				    MODEM_KEY_MGMT_CRED_TYPE_CA_CHAIN,
@@ -155,9 +155,9 @@ void main(void)
 
 	printk("HTTPS client sample started\n\r");
 
-	err = bsdlib_init();
+	err = nrf_modem_lib_init(NORMAL_MODE);
 	if (err) {
-		printk("Failed to initialize bsdlib!");
+		printk("Failed to initialize modem library!");
 		return;
 	}
 

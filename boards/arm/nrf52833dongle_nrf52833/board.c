@@ -1,14 +1,14 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <init.h>
 #include <hal/nrf_power.h>
 #include <hal/nrf_nvmc.h>
 
-static int board_nrf52833dongle_nrf52833_init(struct device *dev)
+static int board_nrf52833dongle_nrf52833_init(const struct device *dev)
 {
 	ARG_UNUSED(dev);
 

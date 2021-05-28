@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 /**@file
@@ -22,9 +22,9 @@ int gps_control_init(struct k_work_q *work_q, gps_event_handler_t handler);
 
 void gps_control_on_trigger(void);
 
-void gps_control_stop(u32_t delay_ms);
+void gps_control_stop(uint32_t delay_ms);
 
-void gps_control_start(u32_t delay_ms);
+void gps_control_start(uint32_t delay_ms);
 
 bool gps_control_is_enabled(void);
 

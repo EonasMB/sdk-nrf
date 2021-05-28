@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #ifndef ADP536X_H_
@@ -91,7 +91,7 @@ int adp536x_write_reg(u8_t reg, u8_t val);
  * @retval 0 If the operation was successful.
  *           Otherwise, a (negative) error code is returned.
  */
-int adp536x_vbus_current_set(u8_t value);
+int adp536x_vbus_current_set(uint8_t value);
 
 /**
  * @brief Set the charger current.
@@ -101,7 +101,7 @@ int adp536x_vbus_current_set(u8_t value);
  * @retval 0 If the operation was successful.
  *           Otherwise, a (negative) error code is returned.
  */
-int adp536x_charger_current_set(u8_t value);
+int adp536x_charger_current_set(uint8_t value);
 
 /**
  * @brief Set the charger termination voltage.
@@ -114,7 +114,7 @@ int adp536x_charger_current_set(u8_t value);
  * @retval 0 If the operation was successful.
  *           Otherwise, a (negative) error code is returned.
  */
-int adp536x_charger_termination_voltage_set(u8_t value);
+int adp536x_charger_termination_voltage_set(uint8_t value);
 
 /**
  * @brief Enable charging.
@@ -134,7 +134,7 @@ int adp536x_charging_enable(bool enable);
  * @retval 0 If the operation was successful.
  *           Otherwise, a (negative) error code is returned.
  */
-int adp536x_charger_status_1_read(u8_t *buf);
+int adp536x_charger_status_1_read(uint8_t *buf);
 
 /**
  * @brief Read the STATUS2 register.
@@ -144,7 +144,7 @@ int adp536x_charger_status_1_read(u8_t *buf);
  * @retval 0 If the operation was successful.
  *           Otherwise, a (negative) error code is returned.
  */
-int adp536x_charger_status_2_read(u8_t *buf);
+int adp536x_charger_status_2_read(uint8_t *buf);
 
 /**
  * @brief Enable charge hiccup protection mode.
@@ -220,7 +220,7 @@ int adp536x_factory_reset(void);
  * @retval 0 If the operation was successful.
  *           Otherwise, a (negative) error code is returned.
  */
-int adp536x_oc_chg_current_set(u8_t value);
+int adp536x_oc_chg_current_set(uint8_t value);
 
 /**
  * @brief Set the buck discharge resistor status.
@@ -246,6 +246,7 @@ int adp536x_fuel_gauge_enable_set(bool enable);
  * @return 0 If operation was successful,
  *           Otherwise a (negative) error code is returned.
  */
-int adp536x_fuel_gauge_get(u8_t *gauge);
+int adp536x_fuel_gauge_get(uint8_t *gauge);
 
+/** @} */
 #endif /* ADP536X_H_ */

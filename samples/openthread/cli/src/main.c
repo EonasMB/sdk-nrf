@@ -1,10 +1,15 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
+
 #include <zephyr.h>
 #include <logging/log.h>
+
+#if CONFIG_BT
+#include "ble.h"
+#endif
 
 LOG_MODULE_REGISTER(cli_sample, CONFIG_OT_COMMAND_LINE_INTERFACE_LOG_LEVEL);
 
@@ -18,9 +23,12 @@ LOG_MODULE_REGISTER(cli_sample, CONFIG_OT_COMMAND_LINE_INTERFACE_LOG_LEVEL);
 	"documentation at:\n\r" \
 	"https://github.com/openthread/openthread/blob/master/src/cli/README.md\n\r"
 
-
 void main(void)
 {
 	LOG_INF(WELLCOME_TEXT);
-	/* nothing to do for the app, so let's return */
+
+#if CONFIG_BT
+	ble_enable();
+#endif
+
 }

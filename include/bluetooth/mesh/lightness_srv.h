@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 /**
@@ -39,10 +39,6 @@ struct bt_mesh_lightness_srv;
 			&_bt_mesh_lightness_srv_lvl_handlers),                 \
 		.ponoff = BT_MESH_PONOFF_SRV_INIT(                             \
 			&_bt_mesh_lightness_srv_onoff_handlers, NULL, NULL),   \
-		.pub = { .update = _bt_mesh_lightness_srv_update_handler,      \
-			 .msg = NET_BUF_SIMPLE(BT_MESH_MODEL_BUF_LEN(          \
-				 BT_MESH_LIGHTNESS_OP_STATUS,                  \
-				 BT_MESH_LIGHTNESS_MSG_MAXLEN_STATUS)) },      \
 		.handlers = _handlers,                                         \
 	}
 
@@ -109,7 +105,7 @@ struct bt_mesh_lightness_srv_handlers {
 	 */
 	void (*const default_update)(struct bt_mesh_lightness_srv *srv,
 				     struct bt_mesh_msg_ctx *ctx,
-				     u16_t old_default, u16_t new_default);
+				     uint16_t old_default, uint16_t new_default);
 
 	/** @brief The Light Range state has changed.
 	 *
@@ -146,6 +142,12 @@ struct bt_mesh_lightness_srv {
 	struct bt_mesh_model *lightness_model;
 	/** Model publication parameters. */
 	struct bt_mesh_model_pub pub;
+	/* Publication buffer */
+	struct net_buf_simple pub_buf;
+	/* Publication data */
+	uint8_t pub_data[BT_MESH_MODEL_BUF_LEN(
+		BT_MESH_LIGHTNESS_OP_STATUS,
+		BT_MESH_LIGHTNESS_MSG_MAXLEN_STATUS)];
 	/** Transaction ID tracker for the set messages. */
 	struct bt_mesh_tid_ctx tid;
 	/** User handler functions. */
@@ -154,11 +156,16 @@ struct bt_mesh_lightness_srv {
 	/** Current Light Level Range. */
 	struct bt_mesh_lightness_range range;
 	/** Current Default Light Level. */
-	u16_t default_light;
+	uint16_t default_light;
 	/** The last known Light Level. */
-	u16_t last;
+	uint16_t last;
 	/** Internal flag state. */
 	atomic_t flags;
+
+#if defined(CONFIG_BT_MESH_LIGHT_CTRL_SRV)
+	/** Acting controller, if enabled. */
+	struct bt_mesh_light_ctrl_srv *ctrl;
+#endif
 };
 
 /** @brief Publish the current Light state.
@@ -166,8 +173,8 @@ struct bt_mesh_lightness_srv {
  * Publishes a Light Lightness status message with the configured publish
  * parameters, or using the given message context.
  *
- * @note This API is only used publishing unprompted status messages. Response
- * messages for get and set messages are handled internally.
+ * @note This API is only used for publishing unprompted status messages.
+ * Response messages for get and set messages are handled internally.
  *
  * @param[in] srv Server instance to publish with.
  * @param[in] ctx Message context, or NULL to publish with the configured
@@ -175,8 +182,6 @@ struct bt_mesh_lightness_srv {
  * @param[in] status Status to publish.
  *
  * @return 0 Successfully published the current Light state.
- * @retval -ENOTSUP A message context was not provided and publishing is not
- * supported.
  * @retval -EADDRNOTAVAIL A message context was not provided and publishing is
  * not configured.
  * @retval -EAGAIN The device has not been provisioned.
@@ -193,7 +198,6 @@ extern const struct bt_mesh_lvl_srv_handlers
 	_bt_mesh_lightness_srv_lvl_handlers;
 extern const struct bt_mesh_onoff_srv_handlers
 	_bt_mesh_lightness_srv_onoff_handlers;
-int _bt_mesh_lightness_srv_update_handler(struct bt_mesh_model *model);
 /** @endcond */
 
 #ifdef __cplusplus

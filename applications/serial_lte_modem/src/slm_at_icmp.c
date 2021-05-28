@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 #include <logging/log.h>
 #include <zephyr.h>
@@ -47,7 +47,7 @@ static struct ping_argv_t {
 } ping_argv;
 
 /* global functions defined in different files */
-void rsp_send(const u8_t *str, size_t len);
+void rsp_send(const uint8_t *str, size_t len);
 
 /* global variable defined in different files */
 extern struct k_work_q slm_work_q;
@@ -56,7 +56,7 @@ extern struct k_work_q slm_work_q;
 static int handle_at_icmp_ping(enum at_cmd_type cmd_type);
 
 /**@brief SLM AT Command list type. */
-static slm_at_cmd_list_t m_icmp_at_list[AT_ICMP_MAX] = {
+static slm_at_cmd_list_t icmp_at_list[AT_ICMP_MAX] = {
 	{AT_ICMP_PING, "AT#XPING", handle_at_icmp_ping},
 };
 
@@ -64,10 +64,9 @@ static struct k_work my_work;
 
 /* global variable defined in different files */
 extern struct at_param_list at_param_list;
-extern struct modem_param_info modem_param;
-extern char rsp_buf[CONFIG_AT_CMD_RESPONSE_MAX_LEN];
+extern char rsp_buf[CONFIG_SLM_SOCKET_RX_MAX * 2];
 
-static inline void setip(u8_t *buffer, u32_t ipaddr)
+static inline void setip(uint8_t *buffer, uint32_t ipaddr)
 {
 	buffer[0] = ipaddr & 0xFF;
 	buffer[1] = (ipaddr >> 8) & 0xFF;
@@ -75,14 +74,14 @@ static inline void setip(u8_t *buffer, u32_t ipaddr)
 	buffer[3] = ipaddr >> 24;
 }
 
-static u16_t check_ics(const u8_t *buffer, int len)
+static uint16_t check_ics(const uint8_t *buffer, int len)
 {
-	const u32_t *ptr32 = (const u32_t *)buffer;
-	u32_t hcs = 0;
-	const u16_t *ptr16;
+	const uint32_t *ptr32 = (const uint32_t *)buffer;
+	uint32_t hcs = 0;
+	const uint16_t *ptr16;
 
 	for (int i = len / 4; i > 0; i--) {
-		u32_t s = *ptr32++;
+		uint32_t s = *ptr32++;
 
 		hcs += s;
 		if (hcs < s) {
@@ -90,10 +89,10 @@ static u16_t check_ics(const u8_t *buffer, int len)
 		}
 	}
 
-	ptr16 = (const u16_t *)ptr32;
+	ptr16 = (const uint16_t *)ptr32;
 
 	if (len & 2) {
-		u16_t s = *ptr16++;
+		uint16_t s = *ptr16++;
 
 		hcs += s;
 		if (hcs < s) {
@@ -102,8 +101,8 @@ static u16_t check_ics(const u8_t *buffer, int len)
 	}
 
 	if (len & 1) {
-		const u8_t *ptr8 = (const u8_t *)ptr16;
-		u8_t s = *ptr8;
+		const uint8_t *ptr8 = (const uint8_t *)ptr16;
+		uint8_t s = *ptr8;
 
 		hcs += s;
 		if (hcs < s) {
@@ -118,26 +117,26 @@ static u16_t check_ics(const u8_t *buffer, int len)
 	return ~hcs;    /* One's complement */
 }
 
-static void calc_ics(u8_t *buffer, int len, int hcs_pos)
+static void calc_ics(uint8_t *buffer, int len, int hcs_pos)
 {
-	u16_t *ptr_hcs = (u16_t *)(buffer + hcs_pos);
+	uint16_t *ptr_hcs = (uint16_t *)(buffer + hcs_pos);
 	*ptr_hcs = 0;   /* Clear checksum before calculation */
-	u16_t hcs;
+	uint16_t hcs;
 
 	hcs = check_ics(buffer, len);
 	*ptr_hcs = hcs;
 }
 
-static u32_t send_ping_wait_reply(void)
+static uint32_t send_ping_wait_reply(void)
 {
-	static u8_t seqnr;
-	u16_t total_length;
-	u8_t ip_buf[NET_IPV4_MTU];
-	u8_t *data = NULL;
-	static s64_t start_t, delta_t;
-	const u8_t header_len = 20;
+	static uint8_t seqnr;
+	uint16_t total_length;
+	uint8_t ip_buf[NET_IPV4_MTU];
+	uint8_t *data = NULL;
+	static int64_t start_t, delta_t;
+	const uint8_t header_len = 20;
 	int pllen, len;
-	const u16_t icmp_hdr_len = 8;
+	const uint16_t icmp_hdr_len = 8;
 	struct sockaddr_in *sa;
 	struct nrf_pollfd fds[1];
 	int fd;
@@ -195,7 +194,7 @@ static u32_t send_ping_wait_reply(void)
 	fd = nrf_socket(NRF_AF_PACKET, NRF_SOCK_RAW, 0);
 	if (fd < 0) {
 		LOG_ERR("socket() failed: (%d)", -errno);
-		return (u32_t)delta_t;
+		return (uint32_t)delta_t;
 	}
 
 	ret = nrf_send(fd, ip_buf, total_length, 0);
@@ -209,7 +208,7 @@ static u32_t send_ping_wait_reply(void)
 	ret = nrf_poll(fds, 1, ping_argv.waitms);
 	if (ret <= 0) {
 		LOG_ERR("nrf_poll() failed: (%d) (%d)", -errno, ret);
-		sprintf(rsp_buf, "#XPING: timeout\r\n");
+		sprintf(rsp_buf, "#XPING: \"timeout\"\r\n");
 		rsp_send(rsp_buf, strlen(rsp_buf));
 		goto close_end;
 	}
@@ -260,26 +259,26 @@ static u32_t send_ping_wait_reply(void)
 
 	/* Result */
 	sprintf(rsp_buf, "#XPING: %d.%03d\r\n",
-		(u32_t)(delta_t)/1000,
-		(u32_t)(delta_t)%1000);
+		(uint32_t)(delta_t)/1000,
+		(uint32_t)(delta_t)%1000);
 	rsp_send(rsp_buf, strlen(rsp_buf));
 
 close_end:
 	(void)nrf_close(fd);
-	return (u32_t)delta_t;
+	return (uint32_t)delta_t;
 }
 
 void ping_task(struct k_work *item)
 {
 	struct addrinfo *si = ping_argv.src;
 	struct addrinfo *di = ping_argv.dest;
-	u32_t sum = 0;
-	u32_t count = 0;
+	uint32_t sum = 0;
+	uint32_t count = 0;
 
 	ARG_UNUSED(item);
 
 	for (int i = 0; i < ping_argv.count; i++) {
-		u32_t ping_t = send_ping_wait_reply();
+		uint32_t ping_t = send_ping_wait_reply();
 
 		if (ping_t > 0)  {
 			count++;
@@ -289,17 +288,18 @@ void ping_task(struct k_work *item)
 	}
 
 	if (count > 1) {
-		u32_t avg = (sum + count/2) / count;
+		uint32_t avg = (sum + count/2) / count;
 		int avg_s = avg / 1000;
 		int avg_f = avg % 1000;
 
-		sprintf(rsp_buf, "#XPING: average %d.%03d\r\n", avg_s, avg_f);
+		sprintf(rsp_buf, "#XPING: \"average %d.%03d\"\r\n",
+			avg_s, avg_f);
 		rsp_send(rsp_buf, strlen(rsp_buf));
 	}
 
 	freeaddrinfo(si);
 	freeaddrinfo(di);
-	sprintf(rsp_buf, "OK\r\n");
+	sprintf(rsp_buf, "\r\nOK\r\n");
 	rsp_send(rsp_buf, strlen(rsp_buf));
 }
 
@@ -309,26 +309,25 @@ static int ping_test_handler(const char *url, int length, int waittime,
 	int st;
 	struct addrinfo *res;
 	int addr_len;
+	char ipv4_addr[NET_IPV4_ADDR_LEN];
 
 	if (length > ICMP_MAX_LEN) {
 		LOG_ERR("Payload size exceeds limit");
 		return -1;
 	}
 
-	st = modem_info_params_get(&modem_param);
-	if (st < 0) {
-		LOG_ERR("Unable to obtain modem parameters (%d)", st);
+	if (!util_get_ipv4_addr(ipv4_addr)) {
+		LOG_ERR("Unable to obtain local IPv4 address");
 		return -1;
 	}
 
 	/* Check network connection status by checking local IP address */
-	addr_len = strlen(modem_param.network.ip_address.value_string);
+	addr_len = strlen(ipv4_addr);
 	if (addr_len == 0) {
 		LOG_ERR("LTE not connected yet");
 		return -1;
 	}
-	st = getaddrinfo(modem_param.network.ip_address.value_string,
-			NULL, NULL, &res);
+	st = getaddrinfo(ipv4_addr, NULL, NULL, &res);
 	if (st != 0) {
 		LOG_ERR("getaddrinfo(src) error: %d", st);
 		return -st;
@@ -339,8 +338,7 @@ static int ping_test_handler(const char *url, int length, int waittime,
 	res = NULL;
 	st = getaddrinfo(url, NULL, NULL, &res);
 	if (st != 0) {
-		LOG_ERR("getaddrinfo(dest) error: %d", st);
-		sprintf(rsp_buf, "Cannot resolve remote host\r\n");
+		sprintf(rsp_buf, "\"resolve host error: %d\"\r\n", st);
 		rsp_send(rsp_buf, strlen(rsp_buf));
 		freeaddrinfo(ping_argv.src);
 		return -st;
@@ -379,26 +377,22 @@ static int handle_at_icmp_ping(enum at_cmd_type cmd_type)
 	int err = -EINVAL;
 	char url[ICMP_MAX_URL];
 	int size = ICMP_MAX_URL;
-	u16_t length, timeout, count, interval;
+	uint16_t length, timeout, count, interval;
 
 	switch (cmd_type) {
 	case AT_CMD_TYPE_SET_COMMAND:
-		if (at_params_valid_count_get(&at_param_list) < 4) {
-			return -EINVAL;
-		}
-		err = at_params_string_get(&at_param_list, 1, url, &size);
+		err = util_string_get(&at_param_list, 1, url, &size);
 		if (err < 0) {
 			return err;
-		};
-		url[size] = '\0';
+		}
 		err = at_params_short_get(&at_param_list, 2, &length);
 		if (err < 0) {
 			return err;
-		};
+		}
 		err = at_params_short_get(&at_param_list, 3, &timeout);
 		if (err < 0) {
 			return err;
-		};
+		}
 		if (at_params_valid_count_get(&at_param_list) > 4) {
 			err = at_params_short_get(&at_param_list, 4, &count);
 			if (err < 0) {
@@ -429,11 +423,11 @@ static int handle_at_icmp_ping(enum at_cmd_type cmd_type)
  */
 int slm_at_icmp_parse(const char *at_cmd)
 {
-	int ret = -ENOTSUP;
+	int ret = -ENOENT;
 	enum at_cmd_type type;
 
 	for (int i = 0; i < AT_ICMP_MAX; i++) {
-		if (slm_util_cmd_casecmp(at_cmd, m_icmp_at_list[i].string)) {
+		if (slm_util_cmd_casecmp(at_cmd, icmp_at_list[i].string)) {
 			ret = at_parser_params_from_str(at_cmd, NULL,
 						&at_param_list);
 			if (ret < 0) {
@@ -441,7 +435,7 @@ int slm_at_icmp_parse(const char *at_cmd)
 				return -EINVAL;
 			}
 			type = at_parser_cmd_type_get(at_cmd);
-			ret = m_icmp_at_list[i].handler(type);
+			ret = icmp_at_list[i].handler(type);
 			break;
 		}
 	}
@@ -454,7 +448,7 @@ int slm_at_icmp_parse(const char *at_cmd)
 void slm_at_icmp_clac(void)
 {
 	for (int i = 0; i < AT_ICMP_MAX; i++) {
-		sprintf(rsp_buf, "%s\r\n", m_icmp_at_list[i].string);
+		sprintf(rsp_buf, "%s\r\n", icmp_at_list[i].string);
 		rsp_send(rsp_buf, strlen(rsp_buf));
 	}
 }

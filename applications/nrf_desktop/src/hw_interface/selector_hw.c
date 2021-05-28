@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <zephyr.h>
@@ -35,10 +35,10 @@ struct selector {
 	const struct selector_config *config;
 	struct gpio_callback gpio_cb[ARRAY_SIZE(port_map)];
 	struct k_delayed_work work;
-	u8_t position;
+	uint8_t position;
 };
 
-static struct device *gpio_dev[ARRAY_SIZE(port_map)];
+static const struct device *gpio_dev[ARRAY_SIZE(port_map)];
 static struct selector selectors[ARRAY_SIZE(selector_config)];
 static enum state state;
 
@@ -138,13 +138,13 @@ static int disable_interrupts_nolock(struct selector *selector)
 	return err;
 }
 
-static void selector_isr(struct device *dev, struct gpio_callback *cb,
-			 u32_t pins_mask)
+static void selector_isr(const struct device *dev, struct gpio_callback *cb,
+			 uint32_t pins_mask)
 {
-	u8_t port = dev - gpio_dev[0];
+	uint8_t port = dev - gpio_dev[0];
 	struct selector *sel;
 
-	sel = CONTAINER_OF((u8_t *)cb - port * sizeof(sel->gpio_cb[0]),
+	sel = CONTAINER_OF((uint8_t *)cb - port * sizeof(sel->gpio_cb[0]),
 			   struct selector,
 			   gpio_cb);
 	disable_interrupts_nolock(sel);
@@ -176,7 +176,7 @@ static void selector_work_fn(struct k_work *w)
 static int configure_callbacks(struct selector *selector)
 {
 	const struct gpio_pin *sel_pins = selector->config->pins;
-	u32_t bitmask[ARRAY_SIZE(gpio_dev)] = {0};
+	uint32_t bitmask[ARRAY_SIZE(gpio_dev)] = {0};
 	int err = 0;
 
 	__ASSERT_NO_MSG(selector->config->pins_size > 0);

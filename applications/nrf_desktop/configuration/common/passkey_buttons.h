@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #ifndef _PASSKEY_BUTTONS_H_
@@ -12,7 +12,7 @@
 #define DIGIT_CNT 10
 
 struct passkey_input_config {
-	const u16_t key_ids[DIGIT_CNT];
+	const uint16_t key_ids[DIGIT_CNT];
 };
 
 #endif /* _PASSKEY_BUTTONS_H_ */

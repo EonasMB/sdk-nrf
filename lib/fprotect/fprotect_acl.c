@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2018 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <hal/nrf_acl.h>
@@ -9,9 +9,9 @@
 #include <errno.h>
 #include <sys/__assert.h>
 
-int fprotect_area(u32_t start, size_t length)
+int fprotect_area(uint32_t start, size_t length)
 {
-	static u32_t region_idx;
+	static uint32_t region_idx;
 
 	__ASSERT_NO_MSG(nrf_ficr_codepagesize_get(NRF_FICR) ==
 			CONFIG_FPROTECT_BLOCK_SIZE);

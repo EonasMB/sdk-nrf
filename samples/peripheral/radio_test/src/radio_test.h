@@ -1,19 +1,14 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #ifndef RADIO_TEST_H_
 #define RADIO_TEST_H_
 
 #include <zephyr/types.h>
-#include <nrfx/hal/nrf_radio.h>
-
-/** Indicates devices that support BLE LR and 802.15.4 radio modes. */
-#if defined(NRF52840_XXAA) || defined(NRF5340_XXAA_NETWORK)
-	#define USE_MORE_RADIO_MODES 1
-#endif
+#include <hal/nrf_radio.h>
 
 /** Maximum radio RX or TX payload. */
 #define RADIO_MAX_PAYLOAD_LEN	256
@@ -23,6 +18,8 @@
 #define IEEE_MIN_CHANNEL	11
 /** IEEE 802.15.4 maximum channel. */
 #define IEEE_MAX_CHANNEL	26
+
+#define NRF21540_USE_DEFAULT_GAIN 0xFF
 
 /**@brief Radio transmit and address pattern. */
 enum transmit_pattern {
@@ -57,6 +54,15 @@ enum radio_test_mode {
 	MODULATED_TX_DUTY_CYCLE,
 };
 
+/**@brief Radio test nRF21540 configuration */
+struct radio_test_nrf21540 {
+	/* nRF21540 activation delay. */
+	uint32_t active_delay;
+
+	/* nRF21540 TX gain. */
+	uint8_t gain;
+};
+
 /**@brief Radio test configuration. */
 struct radio_test_config {
 	/** Radio test type. */
@@ -68,27 +74,27 @@ struct radio_test_config {
 	union {
 		struct {
 			/** Radio output power. */
-			u8_t txpower;
+			uint8_t txpower;
 
 			/** Radio channel. */
-			u8_t channel;
+			uint8_t channel;
 		} unmodulated_tx;
 
 		struct {
 			/** Radio output power. */
-			u8_t txpower;
+			uint8_t txpower;
 
 			/** Radio transmission pattern. */
 			enum transmit_pattern pattern;
 
 			/** Radio channel. */
-			u8_t channel;
+			uint8_t channel;
 
 			/**
 			 * Number of pacets to transmit.
 			 * Set to zero for continuous TX.
 			 */
-			u32_t packets_num;
+			uint32_t packets_num;
 
 			/** Callback to indicate that TX is finished. */
 			void (*cb)(void);
@@ -99,48 +105,53 @@ struct radio_test_config {
 			enum transmit_pattern pattern;
 
 			/** Radio channel. */
-			u8_t channel;
+			uint8_t channel;
 		} rx;
 
 		struct {
 			/** Radio output power. */
-			u8_t txpower;
+			uint8_t txpower;
 
 			/** Radio start channel (frequency). */
-			u8_t channel_start;
+			uint8_t channel_start;
 
 			/** Radio end channel (frequency). */
-			u8_t channel_end;
+			uint8_t channel_end;
 
 			/** Delay time in milliseconds. */
-			u32_t delay_ms;
+			uint32_t delay_ms;
 		} tx_sweep;
 
 		struct {
 			/** Radio start channel (frequency). */
-			u8_t channel_start;
+			uint8_t channel_start;
 
 			/** Radio end channel (frequency). */
-			u8_t channel_end;
+			uint8_t channel_end;
 
 			/** Delay time in milliseconds. */
-			u32_t delay_ms;
+			uint32_t delay_ms;
 		} rx_sweep;
 
 		struct {
 			/** Radio output power. */
-			u8_t txpower;
+			uint8_t txpower;
 
 			/** Radio transmission pattern. */
 			enum transmit_pattern pattern;
 
 			/** Radio channel. */
-			u8_t channel;
+			uint8_t channel;
 
 			/** Duty cycle. */
-			u32_t duty_cycle;
+			uint32_t duty_cycle;
 		} modulated_tx_duty_cycle;
 	} params;
+
+#if CONFIG_NRF21540_FEM
+	/* nRF21540 configuration. */
+	struct radio_test_nrf21540 nrf21540;
+#endif /* CONFIG_NRF21540_FEM */
 };
 
 /**@brief Radio RX statistics. */
@@ -148,22 +159,25 @@ struct radio_rx_stats {
 	/** Content of the last packet. */
 	struct {
 		/** Content of the last packet. */
-		u8_t *buf;
+		uint8_t *buf;
 
 		/** Length of the last packet. */
 		size_t len;
 	} last_packet;
 
 	/** Number of received packets with valid CRC. */
-	u32_t packet_cnt;
+	uint32_t packet_cnt;
 };
 
 /**
  * @brief Function for initializing the Radio Test module.
  *
  * @param[in] config  Radio test configuration.
+ *
+ * @retval 0 If the operation was successful.
+ *           Otherwise, a (negative) error code is returned.
  */
-void radio_test_init(struct radio_test_config *config);
+int radio_test_init(struct radio_test_config *config);
 
 /**
  * @brief Function for starting radio test.
@@ -189,6 +203,6 @@ void radio_rx_stats_get(struct radio_rx_stats *rx_stats);
  *
  * @param[in] dcdc_state  DC/DC converter state.
  */
-void toggle_dcdc_state(u8_t dcdc_state);
+void toggle_dcdc_state(uint8_t dcdc_state);
 
 #endif /* RADIO_TEST_H_ */

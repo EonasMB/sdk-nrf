@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #ifndef _PEER_CONN_EVENT_H_
@@ -46,9 +46,9 @@ struct peer_conn_event {
 	struct event_header header;
 
 	enum peer_id peer_id;
-	u8_t dev_idx;
+	uint8_t dev_idx;
 	enum peer_conn_state conn_state;
-	u32_t baudrate;
+	uint32_t baudrate;
 };
 
 EVENT_TYPE_DECLARE(peer_conn_event);

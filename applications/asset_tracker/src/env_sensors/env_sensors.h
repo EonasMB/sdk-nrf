@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #ifndef ENV_SENSORS_H_
@@ -44,6 +44,8 @@ typedef struct {
 	env_sensor_t type;
 	/** Sensor sample value. */
 	double value;
+	/** Sensor sample uptime. */
+	int64_t ts;
 } env_sensor_data_t;
 
 typedef void (*env_sensors_data_ready_cb)(void);
@@ -98,14 +100,14 @@ int env_sensors_init_and_start(struct k_work_q *work_q,
  * @param interval_s Interval, in seconds. 0 to disable.
  *
  */
-void env_sensors_set_send_interval(const u32_t interval_s);
+void env_sensors_set_send_interval(const uint32_t interval_s);
 
 /**
  * @brief Get environmental sensor's poll/send interval.
  *
  * @return Interval, in seconds.
  */
-u32_t env_sensors_get_send_interval(void);
+uint32_t env_sensors_get_send_interval(void);
 
 /**
  * @brief Enable or disable back-off delay for sending environmental data.

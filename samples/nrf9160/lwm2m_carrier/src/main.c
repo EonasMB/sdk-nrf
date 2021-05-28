@@ -1,14 +1,18 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
+
+#ifdef CONFIG_LWM2M_CARRIER
 #include <lwm2m_carrier.h>
+#endif /* CONFIG_LWM2M_CARRIER */
 #include <zephyr.h>
 
-void bsd_recoverable_error_handler(uint32_t err)
+#ifdef CONFIG_LWM2M_CARRIER
+void nrf_modem_recoverable_error_handler(uint32_t err)
 {
-	printk("bsdlib recoverable error: %u\n", (unsigned int)err);
+	printk("Modem library recoverable error: %u\n", (unsigned int)err);
 }
 
 void print_err(const lwm2m_carrier_event_t *evt)
@@ -95,8 +99,11 @@ int lwm2m_carrier_event_handler(const lwm2m_carrier_event_t *event)
 	case LWM2M_CARRIER_EVENT_BOOTSTRAPPED:
 		printk("LWM2M_CARRIER_EVENT_BOOTSTRAPPED\n");
 		break;
-	case LWM2M_CARRIER_EVENT_READY:
-		printk("LWM2M_CARRIER_EVENT_READY\n");
+	case LWM2M_CARRIER_EVENT_LTE_READY:
+		printk("LWM2M_CARRIER_EVENT_LTE_READY\n");
+		break;
+	case LWM2M_CARRIER_EVENT_REGISTERED:
+		printk("LWM2M_CARRIER_EVENT_REGISTERED\n");
 		break;
 	case LWM2M_CARRIER_EVENT_DEFERRED:
 		printk("LWM2M_CARRIER_EVENT_DEFERRED\n");
@@ -116,6 +123,7 @@ int lwm2m_carrier_event_handler(const lwm2m_carrier_event_t *event)
 
 	return 0;
 }
+#endif /* CONFIG_LWM2M_CARRIER */
 
 void main(void)
 {

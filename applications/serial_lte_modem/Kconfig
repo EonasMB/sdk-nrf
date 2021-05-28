@@ -1,7 +1,7 @@
 #
 # Copyright (c) 2019 Nordic Semiconductor
 #
-# SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
 #
 
 source "Kconfig.zephyr"
@@ -14,23 +14,29 @@ config SLM_AT_MODE
 	select AT_CMD
 	select AT_NOTIF
 	select AT_CMD_PARSER
-	select MODEM_INFO
-	select MQTT_LIB
-	select MQTT_LIB_TLS
-	select FTP_CLIENT
 
 config SLM_AT_MAX_PARAM
-	int "Max number of parameters in AT command"
-	default 8
+	int "Maximum number of parameters in AT command"
+	default 9
+
+config SLM_NATIVE_TLS
+	bool "Use Zephyr mbedTLS"
+
+#
+# external XTAL for UART
+#
+config SLM_EXTERNAL_XTAL
+	bool "Use external XTAL for UARTE"
+	default y
 
 #
 # Inter-Connect
 #
 choice
-	prompt "UART for Interconnect"
+	prompt "UART for interconnect"
 	default SLM_CONNECT_UART_0
 	help
-		Sets the UART to use for interconnect
+		Selects which UART to use for interconnect:
 		-  UART 0
 		-  UART 2
 	config SLM_CONNECT_UART_0
@@ -40,27 +46,26 @@ choice
 		bool "UART 2"
 	  select UART_2_NRF_UARTE
 	  select UART_2_NRF_HW_ASYNC
-	  select UART_2_NRF_FLOW_CONTROL
 endchoice
 
 choice
-	prompt "Termination Mode"
+	prompt "Termination mode"
 	default SLM_CR_LF_TERMINATION
 	help
-		Sets the termination ending from the serial terminal
-		Levels are:
-		-  NULL Termination
-		-  CR Termination
-		-  LF Termination
-		-  CR+LF Termination
+		Sets the command terminator used by the serial terminal.
+		Available options are:
+		-  NULL termination
+		-  CR termination
+		-  LF termination
+		-  CR+LF termination
 	config SLM_NULL_TERMINATION
-		bool "NULL Termination"
+		bool "NULL termination"
 	config SLM_CR_TERMINATION
-		bool "CR Termination"
+		bool "CR termination"
 	config SLM_LF_TERMINATION
-		bool "LF Termination"
+		bool "LF termination"
 	config SLM_CR_LF_TERMINATION
-		bool "CR+LF Termination"
+		bool "CR+LF termination"
 endchoice
 
 config SLM_AT_HOST_TERMINATION
@@ -76,44 +81,69 @@ config SLM_AT_HOST_TERMINATION
 config SLM_GPIO_WAKEUP
 	bool "Support of GPIO wakeup"
 	help
-	  Enable GPIO wakeup on nRF9160 side
+	  Enable GPIO wakeup on nRF9160 side.
 
 config SLM_INTERFACE_PIN
-	int "Interface GPIO to wake up or exit idle"
+	int "Interface GPIO to wake up or exit idle mode"
 	default 6 if SLM_CONNECT_UART_0
 	default 31 if SLM_CONNECT_UART_2
 
 #
-# A-GPS
+# Socket
 #
-config SLM_SUPL_SERVER
-	string "SUPL server"
-	default "supl.google.com"
-
-config SLM_SUPL_PORT
-	int "SUPL server port"
-	default 7276
-
-#
-# FTP
-#
-config SLM_FTP_SERVER_PORT
-	int "FTP service port on remote host"
-	default 21
-
-config SLM_FTP_USER_ANONYMOUS
-	string "FTP client login user Anonymous"
-	default "anonymous"
+config SLM_SOCKET_RX_MAX
+	int "Maximum RX buffer size for receiving socket data"
+	range 576 708
+	default 576
 	help
-	  Define the user name for anonymous login.
+	  Default: NET_IPV4_MTU (576)
+	  Maximum: MSS setting in modem (708)
 
-config SLM_FTP_PASSWORD_ANONYMOUS
-	string "FTP client login password for user Anonymous"
-	default "anonymous@example.com"
+#
+# TCP/TLS proxy
+#
+config SLM_TCP_FILTER_SIZE
+	int "Size of IPv4 address allowlist"
+	range 1 6
+	default 6
+
+config SLM_TCP_POLL_TIME
+	int "Poll time-out in seconds for TCP connection"
+	default 10
+
+config SLM_UDP_POLL_TIME
+	int "Poll time-out in seconds for UDP connection"
+	default 10
+
+config SLM_TCP_CONN_TIME
+	int "Connection time-out in seconds for TCP server"
+	default 60
+
+config SLM_DATAMODE_HWFC
+	bool "UART HWFC for data mode"
+	default y
 	help
-	  Define the password for anonymous login.
+	  Require UART hardware flow control for data mode
 
-rsource "src/tcpip_proxy/Kconfig"
+config SLM_DATAMODE_TERMINATOR
+	string "Pattern string to terminate data mode"
+	default "+++"
+	help
+	  Use a pattern to terminate data mode
+
+config SLM_DATAMODE_SILENCE
+	int "Silence time to exit data mode"
+	default 1
+	help
+	  Exit data mode after the specified time (in seconds) of UART silence
+
+#
+# Configurable services
+#
+rsource "src/gps/Kconfig"
+rsource "src/ftp_c/Kconfig"
+rsource "src/mqtt_c/Kconfig"
+rsource "src/http_c/Kconfig"
 
 module = SLM
 module-str = serial modem

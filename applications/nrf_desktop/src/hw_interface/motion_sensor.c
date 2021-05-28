@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2018-2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <zephyr.h>
@@ -51,13 +51,13 @@ struct sensor_state {
 
 	enum state state;
 	bool sample;
-	u8_t peer_count;
-	u32_t option[MOTION_SENSOR_OPTION_COUNT];
-	u32_t option_mask;
+	uint8_t peer_count;
+	uint32_t option[MOTION_SENSOR_OPTION_COUNT];
+	uint32_t option_mask;
 };
 
 enum sensor_opt {
-	SENSOR_OPT_TYPE,
+	SENSOR_OPT_VARIANT,
 	SENSOR_OPT_CPI,
 	SENSOR_OPT_DOWNSHIFT_RUN,
 	SENSOR_OPT_DOWNSHIFT_REST1,
@@ -70,12 +70,12 @@ static K_SEM_DEFINE(sem, 1, 1);
 static K_THREAD_STACK_DEFINE(thread_stack, THREAD_STACK_SIZE);
 static struct k_thread thread;
 
-static struct device *sensor_dev;
+static const struct device *sensor_dev;
 
 static struct sensor_state state;
 
 static const char * const opt_descr[] = {
-	[SENSOR_OPT_TYPE] = OPT_DESCR_MODULE_TYPE,
+	[SENSOR_OPT_VARIANT] = OPT_DESCR_MODULE_VARIANT,
 	[SENSOR_OPT_CPI] = "cpi",
 	[SENSOR_OPT_DOWNSHIFT_RUN] = "downshift",
 	[SENSOR_OPT_DOWNSHIFT_REST1] = "rest1",
@@ -83,7 +83,7 @@ static const char * const opt_descr[] = {
 };
 
 
-static enum motion_sensor_option config_opt_id_2_option(u8_t config_opt_id)
+static enum motion_sensor_option config_opt_id_2_option(uint8_t config_opt_id)
 {
 	switch (config_opt_id) {
 	case SENSOR_OPT_CPI:
@@ -105,7 +105,7 @@ static enum motion_sensor_option config_opt_id_2_option(u8_t config_opt_id)
 	}
 }
 
-static bool set_option(enum motion_sensor_option option, u32_t value)
+static bool set_option(enum motion_sensor_option option, uint32_t value)
 {
 	if (motion_sensor_option_attr[option] != -ENOTSUP) {
 		k_spinlock_key_t key = k_spin_lock(&state.lock);
@@ -125,11 +125,11 @@ static bool set_option(enum motion_sensor_option option, u32_t value)
 static int settings_set(const char *key, size_t len_rd,
 			settings_read_cb read_cb, void *cb_arg)
 {
-	BUILD_ASSERT(SENSOR_OPT_TYPE == 0);
+	BUILD_ASSERT(SENSOR_OPT_VARIANT == 0);
 
-	for (size_t i = (SENSOR_OPT_TYPE + 1); i < ARRAY_SIZE(opt_descr); i++) {
+	for (size_t i = (SENSOR_OPT_VARIANT + 1); i < ARRAY_SIZE(opt_descr); i++) {
 		if (!strcmp(key, opt_descr[i])) {
-			u32_t readout;
+			uint32_t readout;
 
 			BUILD_ASSERT(sizeof(readout) ==
 				     sizeof(state.option[i]));
@@ -154,7 +154,7 @@ static int settings_set(const char *key, size_t len_rd,
 SETTINGS_STATIC_HANDLER_DEFINE(motion_sensor, MODULE_NAME, NULL, settings_set,
 			       NULL, NULL);
 
-static void data_ready_handler(struct device *dev, struct sensor_trigger *trig);
+static void data_ready_handler(const struct device *dev, struct sensor_trigger *trig);
 
 
 static int enable_trigger(void)
@@ -181,7 +181,7 @@ static int disable_trigger(void)
 	return err;
 }
 
-static void data_ready_handler(struct device *dev, struct sensor_trigger *trig)
+static void data_ready_handler(const struct device *dev, struct sensor_trigger *trig)
 {
 	k_spinlock_key_t key = k_spin_lock(&state.lock);
 
@@ -268,7 +268,7 @@ static void set_sampling_time_in_sleep3(bool connected)
 		return;
 	}
 
-	u32_t sampling_time = (connected) ?
+	uint32_t sampling_time = (connected) ?
 		(CONFIG_DESKTOP_MOTION_SENSOR_SLEEP3_SAMPLE_TIME_CONNECTED) :
 		(CONFIG_DESKTOP_MOTION_SENSOR_SLEEP3_SAMPLE_TIME_DEFAULT);
 
@@ -368,9 +368,9 @@ static int init(void)
 	return err;
 }
 
-static void fetch_config(const u8_t opt_id, u8_t *data, size_t *size)
+static void fetch_config(const uint8_t opt_id, uint8_t *data, size_t *size)
 {
-	if (opt_id == SENSOR_OPT_TYPE) {
+	if (opt_id == SENSOR_OPT_VARIANT) {
 		*size = strlen(CONFIG_DESKTOP_MOTION_SENSOR_TYPE);
 		__ASSERT_NO_MSG((*size != 0) &&
 				(*size < CONFIG_CHANNEL_FETCHED_DATA_MAX_SIZE));
@@ -389,7 +389,7 @@ static void fetch_config(const u8_t opt_id, u8_t *data, size_t *size)
 	}
 }
 
-static void store_config(u8_t opt_id, const u8_t *data, size_t data_size)
+static void store_config(uint8_t opt_id, const uint8_t *data, size_t data_size)
 {
 	if (IS_ENABLED(CONFIG_SETTINGS)) {
 		char key[MAX_KEY_LEN];
@@ -408,7 +408,7 @@ static void store_config(u8_t opt_id, const u8_t *data, size_t data_size)
 	}
 }
 
-static void update_config(const u8_t opt_id, const u8_t *data,
+static void update_config(const uint8_t opt_id, const uint8_t *data,
 			  const size_t size)
 {
 	enum motion_sensor_option option = config_opt_id_2_option(opt_id);
@@ -429,8 +429,8 @@ static void update_config(const u8_t opt_id, const u8_t *data,
 
 static void write_config(void)
 {
-	u32_t option[MOTION_SENSOR_OPTION_COUNT];
-	u32_t mask;
+	uint32_t option[MOTION_SENSOR_OPTION_COUNT];
+	uint32_t mask;
 
 	BUILD_ASSERT(sizeof(option) == sizeof(state.option), "");
 
@@ -474,7 +474,7 @@ static void motion_thread_fn(void)
 
 	while (!err) {
 		bool send_event;
-		u32_t option_bm;
+		uint32_t option_bm;
 
 		k_sem_take(&sem, K_FOREVER);
 
@@ -534,7 +534,8 @@ static bool event_handler(const struct event_header *eh)
 		const struct hid_report_sent_event *event =
 			cast_hid_report_sent_event(eh);
 
-		if (event->report_id == REPORT_ID_MOUSE) {
+		if ((event->report_id == REPORT_ID_MOUSE) ||
+		    (event->report_id == REPORT_ID_BOOT_MOUSE)) {
 			k_spinlock_key_t key = k_spin_lock(&state.lock);
 			if (state.state == STATE_FETCHING) {
 				state.sample = true;
@@ -550,7 +551,8 @@ static bool event_handler(const struct event_header *eh)
 		const struct hid_report_subscription_event *event =
 			cast_hid_report_subscription_event(eh);
 
-		if (event->report_id == REPORT_ID_MOUSE) {
+		if ((event->report_id == REPORT_ID_MOUSE) ||
+		    (event->report_id == REPORT_ID_BOOT_MOUSE)) {
 			if (event->enabled) {
 				__ASSERT_NO_MSG(state.peer_count < UCHAR_MAX);
 				state.peer_count++;
@@ -695,8 +697,8 @@ static bool event_handler(const struct event_header *eh)
 		return handle_usb_state_event(cast_usb_state_event(eh));
 	}
 
-	GEN_CONFIG_EVENT_HANDLERS("sensor", opt_descr, update_config,
-				  fetch_config, false);
+	GEN_CONFIG_EVENT_HANDLERS(STRINGIFY(MODULE), opt_descr, update_config,
+				  fetch_config);
 
 	/* If event is unhandled, unsubscribe. */
 	__ASSERT_NO_MSG(false);
@@ -709,8 +711,7 @@ EVENT_SUBSCRIBE(MODULE, wake_up_event);
 EVENT_SUBSCRIBE(MODULE, hid_report_sent_event);
 EVENT_SUBSCRIBE(MODULE, hid_report_subscription_event);
 #if CONFIG_DESKTOP_CONFIG_CHANNEL_ENABLE
-EVENT_SUBSCRIBE(MODULE, config_event);
-EVENT_SUBSCRIBE(MODULE, config_fetch_request_event);
+EVENT_SUBSCRIBE_EARLY(MODULE, config_event);
 #endif
 #if CONFIG_DESKTOP_MOTION_SENSOR_SLEEP_DISABLE_ON_USB
 EVENT_SUBSCRIBE(MODULE, usb_state_event);

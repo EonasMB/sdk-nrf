@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2018 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <drivers/gpio.h>
@@ -33,7 +33,7 @@ enum gps_sim_state {
 };
 
 struct gps_sim_data {
-	struct device *dev;
+	const struct device *dev;
 	enum gps_sim_state state;
 	gps_event_handler_t handler;
 	struct gps_config cfg;
@@ -52,10 +52,10 @@ struct gps_sim_data {
  *
  * @param gps_data Pointer to NMEA sentence.
  */
-static u8_t nmea_checksum_get(const u8_t *gps_data)
+static uint8_t nmea_checksum_get(const uint8_t *gps_data)
 {
-	const u8_t *i = gps_data + 1;
-	u8_t checksum = 0;
+	const uint8_t *i = gps_data + 1;
+	uint8_t checksum = 0;
 
 	while (*i != '*') {
 		if ((i - gps_data) > GPS_NMEA_SENTENCE_MAX_LENGTH) {
@@ -77,7 +77,7 @@ static u8_t nmea_checksum_get(const u8_t *gps_data)
  */
 static double generate_sine(double offset, double amplitude)
 {
-	u32_t time = k_uptime_get_32() / CONFIG_GPS_SIM_FIX_TIME;
+	uint32_t time = k_uptime_get_32() / CONFIG_GPS_SIM_FIX_TIME;
 
 	return offset + amplitude * sin(time % UINT16_MAX);
 }
@@ -91,7 +91,7 @@ static double generate_sine(double offset, double amplitude)
  */
 static double generate_cosine(double offset, double amplitude)
 {
-	u32_t time = k_uptime_get_32() / CONFIG_GPS_SIM_FIX_TIME;
+	uint32_t time = k_uptime_get_32() / CONFIG_GPS_SIM_FIX_TIME;
 
 	return offset + amplitude * cos(time % UINT16_MAX);
 }
@@ -115,16 +115,16 @@ static double generate_pseudo_random(void)
 static void generate_gps_data(struct gps_nmea *gps_data,
 			      double max_variation)
 {
-	static u8_t hour = BASE_GPS_SAMPLE_HOUR;
-	static u8_t minute = BASE_GPS_SAMPLE_MINUTE;
-	static u8_t second = BASE_GPS_SAMPLE_SECOND;
-	static u32_t last_uptime;
+	static uint8_t hour = BASE_GPS_SAMPLE_HOUR;
+	static uint8_t minute = BASE_GPS_SAMPLE_MINUTE;
+	static uint8_t second = BASE_GPS_SAMPLE_SECOND;
+	static uint32_t last_uptime;
 	double lat = BASE_GSP_SAMPLE_LAT;
 	double lng = BASE_GSP_SAMPLE_LNG;
 	char lat_heading = 'N';
 	char lng_heading = 'E';
-	u32_t uptime;
-	u8_t checksum;
+	uint32_t uptime;
+	uint8_t checksum;
 
 	if (IS_ENABLED(CONFIG_GPS_SIM_ELLIPSOID)) {
 		lat = generate_sine(BASE_GSP_SAMPLE_LAT, max_variation / 2.0);
@@ -189,9 +189,9 @@ static void generate_gps_data(struct gps_nmea *gps_data,
 	LOG_DBG("%s (%d bytes)", log_strdup(gps_data->buf), gps_data->len);
 }
 
-static void notify_event(struct device *dev, struct gps_event *evt)
+static void notify_event(const struct device *dev, struct gps_event *evt)
 {
-	struct gps_sim_data *drv_data = dev->driver_data;
+	struct gps_sim_data *drv_data = dev->data;
 
 	if (drv_data->handler) {
 		drv_data->handler(dev, evt);
@@ -300,9 +300,9 @@ static void fix_work_fn(struct k_work *work)
 	}
 }
 
-static int start(struct device *dev, struct gps_config *cfg)
+static int start(const struct device *dev, struct gps_config *cfg)
 {
-	struct gps_sim_data *drv_data = dev->driver_data;
+	struct gps_sim_data *drv_data = dev->data;
 
 	if ((dev == NULL) || (cfg == NULL)) {
 		return -EINVAL;
@@ -326,9 +326,9 @@ static int start(struct device *dev, struct gps_config *cfg)
 	return 0;
 }
 
-static int stop(struct device *dev)
+static int stop(const struct device *dev)
 {
-	struct gps_sim_data *drv_data = dev->driver_data;
+	struct gps_sim_data *drv_data = dev->data;
 
 	if (dev == NULL) {
 		return -EINVAL;
@@ -352,9 +352,9 @@ static int stop(struct device *dev)
 	return 0;
 }
 
-static int init(struct device *dev, gps_event_handler_t handler)
+static int init(const struct device *dev, gps_event_handler_t handler)
 {
-	struct gps_sim_data *drv_data = dev->driver_data;
+	struct gps_sim_data *drv_data = dev->data;
 
 	if (handler == NULL) {
 		LOG_ERR("Event handler must be provided");
@@ -372,9 +372,9 @@ static int init(struct device *dev, gps_event_handler_t handler)
 	return 0;
 }
 
-static int gps_sim_setup(struct device *dev)
+static int gps_sim_setup(const struct device *dev)
 {
-	struct gps_sim_data *drv_data = dev->driver_data;
+	struct gps_sim_data *drv_data = dev->data;
 
 	drv_data->dev = dev;
 	drv_data->state = GPS_SIM_UNINIT;
@@ -404,6 +404,7 @@ static const struct gps_driver_api gps_sim_api_funcs = {
 #define GPS_INIT_PRIORITY 90
 #endif
 
-DEVICE_AND_API_INIT(gps_sim, CONFIG_GPS_SIM_DEV_NAME, gps_sim_setup,
-		    &gps_sim_data, NULL, POST_KERNEL, GPS_INIT_PRIORITY,
-		    &gps_sim_api_funcs);
+DEVICE_DEFINE(gps_sim, CONFIG_GPS_SIM_DEV_NAME,
+	      gps_sim_setup, device_pm_control_nop,
+	      &gps_sim_data, NULL, POST_KERNEL, GPS_INIT_PRIORITY,
+	      &gps_sim_api_funcs);

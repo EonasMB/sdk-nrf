@@ -11,7 +11,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = 'Kconfig reference'
-copyright = '2019, Nordic Semiconductor'
+copyright = '2019-2021, Nordic Semiconductor'
 author = 'Nordic Semiconductor'
 
 # Get rid of version number while keeping the spacing the same as for other
@@ -60,5 +60,6 @@ html_show_copyright = True
 html_show_license = True
 
 def setup(app):
-    app.add_stylesheet("css/common.css")
-    app.add_stylesheet("css/kconfig.css")
+    app.add_css_file("css/common.css")
+    app.add_css_file("css/kconfig.css")
+    app.add_js_file("js/ncs.js")

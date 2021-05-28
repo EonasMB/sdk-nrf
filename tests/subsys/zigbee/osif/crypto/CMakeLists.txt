@@ -1,7 +1,7 @@
 #
 # Copyright (c) 2020 Nordic Semiconductor ASA
 #
-# SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
 #
 
 cmake_minimum_required(VERSION 3.13.1)
@@ -16,8 +16,8 @@ target_compile_definitions(app PRIVATE
 
 target_include_directories(app PRIVATE
   ${NRF_DIR}/subsys/zigbee/osif
-  ${NRFXLIB_DIR}/zboss/include
-  ${NRFXLIB_DIR}/zboss/include/osif
+  ${NRFXLIB_DIR}/zboss/production/include
+  ${NRFXLIB_DIR}/zboss/production/include/osif
 )
 
 project(osif_crypto)

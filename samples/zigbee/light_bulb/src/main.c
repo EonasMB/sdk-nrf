@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2020 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 /** @file
@@ -20,8 +20,8 @@
 #include <zboss_api.h>
 #include <zboss_api_addons.h>
 #include <zb_mem_config_med.h>
-#include <zigbee_helpers.h>
-#include <zb_error_handler.h>
+#include <zigbee/zigbee_app_utils.h>
+#include <zigbee/zigbee_error_handler.h>
 #include <zb_nrf_platform.h>
 
 #define RUN_STATUS_LED                  DK_LED1
@@ -122,7 +122,7 @@ typedef struct {
 static bulb_device_ctx_t dev_ctx;
 
 /* Pointer to PWM device controlling leds with pwm signal. */
-static struct device *led_pwm_dev;
+static const struct device *led_pwm_dev;
 
 ZB_ZCL_DECLARE_IDENTIFY_ATTRIB_LIST(
 	identify_attr_list,
@@ -189,14 +189,14 @@ ZB_HA_DECLARE_DIMMABLE_LIGHT_CTX(
  * @param[in]   has_changed   Bitmask containing buttons
  *                            that have changed their state.
  */
-static void button_changed(u32_t button_state, u32_t has_changed)
+static void button_changed(uint32_t button_state, uint32_t has_changed)
 {
 	zb_ret_t zb_err_code;
 
 	/* Calculate bitmask of buttons that are pressed
 	 * and have changed their state.
 	 */
-	u32_t buttons = button_state & has_changed;
+	uint32_t buttons = button_state & has_changed;
 
 	if (buttons & IDENTIFY_MODE_BUTTON) {
 		/* Check if endpoint is in identifying mode,
@@ -250,7 +250,7 @@ static void configure_gpio(void)
  */
 static void light_bulb_set_brightness(zb_uint8_t brightness_level)
 {
-	u32_t pulse = brightness_level * LED_PWM_PERIOD_US / 255U;
+	uint32_t pulse = brightness_level * LED_PWM_PERIOD_US / 255U;
 
 	if (pwm_pin_set_usec(led_pwm_dev, PWM_DK_LED4_CHANNEL,
 			     LED_PWM_PERIOD_US, pulse, PWM_DK_LED4_FLAGS)) {
@@ -401,7 +401,7 @@ static void bulb_clusters_attr_init(void)
  * @param[in]   bufid   Reference to Zigbee stack buffer
  *                      used to pass received data.
  */
-static zb_void_t zcl_device_cb(zb_bufid_t bufid)
+static void zcl_device_cb(zb_bufid_t bufid)
 {
 	zb_uint8_t cluster_id;
 	zb_uint8_t attr_id;
@@ -431,7 +431,7 @@ static zb_void_t zcl_device_cb(zb_bufid_t bufid)
 			  set_attr_value_param.attr_id;
 
 		if (cluster_id == ZB_ZCL_CLUSTER_ID_ON_OFF) {
-			u8_t value =
+			uint8_t value =
 				device_cb_param->cb_param.set_attr_value_param
 				.values.data8;
 
@@ -440,7 +440,7 @@ static zb_void_t zcl_device_cb(zb_bufid_t bufid)
 				on_off_set_value((zb_bool_t)value);
 			}
 		} else if (cluster_id == ZB_ZCL_CLUSTER_ID_LEVEL_CONTROL) {
-			u16_t value = device_cb_param->cb_param.
+			uint16_t value = device_cb_param->cb_param.
 				      set_attr_value_param.values.data16;
 
 			LOG_INF("level control attribute setting to %hd",

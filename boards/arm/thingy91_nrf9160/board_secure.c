@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
 #include <init.h>
@@ -81,7 +81,7 @@ static int power_mgmt_init(void)
 	return 0;
 }
 
-static int thingy91_board_init(struct device *dev)
+static int thingy91_board_init(const struct device *dev)
 {
 	int err;
 

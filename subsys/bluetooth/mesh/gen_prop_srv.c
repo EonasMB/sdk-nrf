@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
  *
- * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 #include <bluetooth/mesh/gen_prop_srv.h>
 #include <sys/util.h>
@@ -28,7 +28,7 @@ BUILD_ASSERT(BT_MESH_MODEL_BUF_LEN(BT_MESH_PROP_OP_MFR_PROPS_STATUS,
 	     "The property value must fit inside an application SDU.");
 
 static struct bt_mesh_prop *prop_get(const struct bt_mesh_prop_srv *srv,
-				     u16_t id)
+				     uint16_t id)
 {
 	if (!srv || id == BT_MESH_PROP_ID_PROHIBITED) {
 		return NULL;
@@ -52,13 +52,13 @@ static void store_props(const struct bt_mesh_prop_srv *srv)
 		return;
 	}
 
-	u8_t user_access[CONFIG_BT_MESH_PROP_MAXCOUNT];
+	uint8_t user_access[CONFIG_BT_MESH_PROP_MAXCOUNT];
 
-	for (u8_t i = 0; i < srv->property_count; ++i) {
+	for (uint8_t i = 0; i < srv->property_count; ++i) {
 		user_access[i] = srv->properties[i].user_access;
 	}
 
-	(void)bt_mesh_model_data_store(srv->mod, false, user_access,
+	(void)bt_mesh_model_data_store(srv->mod, false, NULL, user_access,
 				       srv->property_count);
 }
 
@@ -81,7 +81,7 @@ static void set_user_access(const struct bt_mesh_prop_srv *srv,
 }
 
 static void pub_list_build(const struct bt_mesh_prop_srv *srv,
-			   struct net_buf_simple *buf, u16_t start_prop)
+			   struct net_buf_simple *buf, uint16_t start_prop)
 {
 	bt_mesh_model_msg_init(buf, op_get(BT_MESH_PROP_OP_PROPS_STATUS,
 					   srv_kind(srv->mod)));
@@ -122,7 +122,7 @@ static void handle_owner_property_get(struct bt_mesh_model *mod,
 	}
 
 	struct bt_mesh_prop_srv *srv = mod->user_data;
-	u16_t id = net_buf_simple_pull_le16(buf);
+	uint16_t id = net_buf_simple_pull_le16(buf);
 
 	if (id == BT_MESH_PROP_ID_PROHIBITED) {
 		return;
@@ -171,7 +171,7 @@ static void owner_property_set(struct bt_mesh_model *mod,
 	}
 
 	struct bt_mesh_prop_srv *srv = mod->user_data;
-	u16_t id = net_buf_simple_pull_le16(buf);
+	uint16_t id = net_buf_simple_pull_le16(buf);
 	enum bt_mesh_prop_access user_access = net_buf_simple_pull_u8(buf);
 
 	if (id == BT_MESH_PROP_ID_PROHIBITED ||
@@ -281,7 +281,7 @@ static void handle_client_properties_get(struct bt_mesh_model *mod,
 		return;
 	}
 
-	u16_t start_prop = net_buf_simple_pull_le16(buf);
+	uint16_t start_prop = net_buf_simple_pull_le16(buf);
 
 	BT_MESH_MODEL_BUF_DEFINE(rsp, BT_MESH_PROP_OP_CLIENT_PROPS_STATUS,
 				 BT_MESH_PROP_MSG_MAXLEN_PROPS_STATUS);
@@ -299,7 +299,7 @@ const struct bt_mesh_model_op _bt_mesh_prop_client_srv_op[] = {
 /* User properties */
 
 static struct bt_mesh_prop_srv *prop_srv_get(struct bt_mesh_model *user_srv_mod,
-					     u16_t model_id)
+					     uint16_t model_id)
 {
 	struct bt_mesh_model *mod =
 		bt_mesh_model_find(bt_mesh_model_elem(user_srv_mod), model_id);
@@ -307,7 +307,7 @@ static struct bt_mesh_prop_srv *prop_srv_get(struct bt_mesh_model *user_srv_mod,
 	return mod ? mod->user_data : NULL;
 }
 
-static struct bt_mesh_prop *user_prop_get(struct bt_mesh_model *mod, u16_t id,
+static struct bt_mesh_prop *user_prop_get(struct bt_mesh_model *mod, uint16_t id,
 					  struct bt_mesh_prop_srv **srv)
 {
 	struct bt_mesh_prop_srv *const srvs[] = {
@@ -380,7 +380,7 @@ static void handle_user_property_get(struct bt_mesh_model *mod,
 		return;
 	}
 
-	u16_t id = net_buf_simple_pull_le16(buf);
+	uint16_t id = net_buf_simple_pull_le16(buf);
 
 	if (id == BT_MESH_PROP_ID_PROHIBITED) {
 		return;
@@ -404,19 +404,17 @@ static void handle_user_property_get(struct bt_mesh_model *mod,
 
 	net_buf_simple_add_u8(&rsp, prop->user_access);
 
-	if (!(prop->user_access & BT_MESH_PROP_ACCESS_READ)) {
-		goto respond;
+	if (prop->user_access & BT_MESH_PROP_ACCESS_READ) {
+		struct bt_mesh_prop_val value = {
+			.meta = *prop,
+			.value = net_buf_simple_tail(&rsp),
+			.size = CONFIG_BT_MESH_PROP_MAXSIZE,
+		};
+
+		srv->get(srv, ctx, &value);
+
+		net_buf_simple_add(&rsp, value.size);
 	}
-
-	struct bt_mesh_prop_val value = {
-		.meta = *prop,
-		.value = net_buf_simple_tail(&rsp),
-		.size = CONFIG_BT_MESH_PROP_MAXSIZE,
-	};
-
-	srv->get(srv, ctx, &value);
-
-	net_buf_simple_add(&rsp, value.size);
 
 respond:
 	bt_mesh_model_send(mod, ctx, &rsp, NULL, NULL);
@@ -431,7 +429,7 @@ static void user_property_set(struct bt_mesh_model *mod,
 		return;
 	}
 
-	u16_t id = net_buf_simple_pull_le16(buf);
+	uint16_t id = net_buf_simple_pull_le16(buf);
 
 	BT_MESH_MODEL_BUF_DEFINE(rsp, BT_MESH_PROP_OP_USER_PROP_STATUS,
 				 BT_MESH_PROP_MSG_MAXLEN_PROP_STATUS);
@@ -455,12 +453,15 @@ static void user_property_set(struct bt_mesh_model *mod,
 		goto respond;
 	}
 
+	net_buf_simple_add_u8(&rsp, prop->user_access);
+
 	if (!(prop->user_access & BT_MESH_PROP_ACCESS_WRITE) ||
 	    IS_MFR_SRV(owner_srv->mod)) {
-		return;
+		/* IF write is not supported, we should only send the ID
+		 * and user_access as a response.
+		 */
+		goto respond;
 	}
-
-	net_buf_simple_add_u8(&rsp, prop->user_access);
 
 	struct bt_mesh_prop_val value = {
 		.meta = *prop,
@@ -511,65 +512,7 @@ const struct bt_mesh_model_op _bt_mesh_prop_user_srv_op[] = {
 	BT_MESH_MODEL_OP_END,
 };
 
-static int bt_mesh_prop_srv_init(struct bt_mesh_model *mod)
-{
-	struct bt_mesh_prop_srv *srv = mod->user_data;
-
-	srv->mod = mod;
-	net_buf_simple_init(mod->pub->msg, 0);
-
-	if (IS_ENABLED(CONFIG_BT_MESH_MODEL_EXTENSIONS) &&
-	    (mod->id == BT_MESH_MODEL_ID_GEN_MANUFACTURER_PROP_SRV ||
-	     mod->id == BT_MESH_MODEL_ID_GEN_ADMIN_PROP_SRV)) {
-		bt_mesh_model_extend(
-			mod,
-			bt_mesh_model_find(bt_mesh_model_elem(mod),
-					   BT_MESH_MODEL_ID_GEN_USER_PROP_SRV));
-	}
-
-	if (IS_MFR_SRV(mod)) {
-		/* Manufacturer properties aren't writable */
-		struct bt_mesh_prop *prop;
-
-		PROP_FOREACH(srv, prop)
-		{
-			prop->user_access &= ~BT_MESH_PROP_ACCESS_WRITE;
-		}
-	}
-	return 0;
-}
-
-#ifdef CONFIG_BT_SETTINGS
-static int bt_mesh_prop_srv_settings_set(struct bt_mesh_model *model,
-					 size_t len_rd,
-					 settings_read_cb read_cb, void *cb_arg)
-{
-	struct bt_mesh_prop_srv *srv = model->user_data;
-	u8_t entries[CONFIG_BT_MESH_PROP_MAXCOUNT];
-	ssize_t size = MIN(sizeof(entries), len_rd);
-
-	size = read_cb(cb_arg, &entries, size);
-
-	if (size < srv->property_count) {
-		return -EINVAL;
-	}
-
-	for (u8_t i = 0; i < srv->property_count; ++i) {
-		srv->properties[i].user_access = entries[i];
-	}
-
-	return 0;
-}
-#endif
-
-const struct bt_mesh_model_cb _bt_mesh_prop_srv_cb = {
-	.init = bt_mesh_prop_srv_init,
-#ifdef CONFIG_BT_SETTINGS
-	.settings_set = bt_mesh_prop_srv_settings_set,
-#endif
-};
-
-int _bt_mesh_prop_srv_update_handler(struct bt_mesh_model *mod)
+static int update_handler(struct bt_mesh_model *mod)
 {
 	struct bt_mesh_prop_srv *srv = mod->user_data;
 	struct bt_mesh_prop_val value;
@@ -605,6 +548,83 @@ int _bt_mesh_prop_srv_update_handler(struct bt_mesh_model *mod)
 
 	return 0;
 }
+
+static int bt_mesh_prop_srv_init(struct bt_mesh_model *mod)
+{
+	struct bt_mesh_prop_srv *srv = mod->user_data;
+
+	srv->mod = mod;
+	srv->pub.msg = &srv->pub_buf;
+	srv->pub.update = update_handler;
+	net_buf_simple_init_with_data(&srv->pub_buf, srv->pub_data,
+				      sizeof(srv->pub_data));
+
+	if (IS_ENABLED(CONFIG_BT_MESH_MODEL_EXTENSIONS) &&
+	    (mod->id == BT_MESH_MODEL_ID_GEN_MANUFACTURER_PROP_SRV ||
+	     mod->id == BT_MESH_MODEL_ID_GEN_ADMIN_PROP_SRV)) {
+		bt_mesh_model_extend(
+			mod,
+			bt_mesh_model_find(bt_mesh_model_elem(mod),
+					   BT_MESH_MODEL_ID_GEN_USER_PROP_SRV));
+	}
+
+	if (IS_MFR_SRV(mod)) {
+		/* Manufacturer properties aren't writable */
+		struct bt_mesh_prop *prop;
+
+		PROP_FOREACH(srv, prop)
+		{
+			prop->user_access &= ~BT_MESH_PROP_ACCESS_WRITE;
+		}
+	}
+	return 0;
+}
+
+static void bt_mesh_prop_srv_reset(struct bt_mesh_model *mod)
+{
+	struct bt_mesh_prop_srv *srv = mod->user_data;
+
+	net_buf_simple_reset(srv->pub.msg);
+
+	if (IS_ENABLED(CONFIG_BT_SETTINGS)) {
+		(void)bt_mesh_model_data_store(srv->mod, false, NULL, NULL, 0);
+	}
+}
+
+#ifdef CONFIG_BT_SETTINGS
+static int bt_mesh_prop_srv_settings_set(struct bt_mesh_model *model,
+					 const char *name, size_t len_rd,
+					 settings_read_cb read_cb, void *cb_arg)
+{
+	struct bt_mesh_prop_srv *srv = model->user_data;
+	uint8_t entries[CONFIG_BT_MESH_PROP_MAXCOUNT];
+	ssize_t size = MIN(sizeof(entries), len_rd);
+
+	if (name) {
+		return -ENOENT;
+	}
+
+	size = read_cb(cb_arg, &entries, size);
+
+	if (size < srv->property_count) {
+		return -EINVAL;
+	}
+
+	for (uint8_t i = 0; i < srv->property_count; ++i) {
+		srv->properties[i].user_access = entries[i];
+	}
+
+	return 0;
+}
+#endif
+
+const struct bt_mesh_model_cb _bt_mesh_prop_srv_cb = {
+	.init = bt_mesh_prop_srv_init,
+	.reset = bt_mesh_prop_srv_reset,
+#ifdef CONFIG_BT_SETTINGS
+	.settings_set = bt_mesh_prop_srv_settings_set,
+#endif
+};
 
 int bt_mesh_prop_srv_pub_list(struct bt_mesh_prop_srv *srv,
 			      struct bt_mesh_msg_ctx *ctx)

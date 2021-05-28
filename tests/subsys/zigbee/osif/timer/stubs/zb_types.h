@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2020 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
+ */
+
 #ifndef ZB_TYPES_H
 #define ZB_TYPES_H 1
 
@@ -19,8 +25,6 @@ typedef signed char        zb_int8_t;
 typedef unsigned short     zb_uint16_t;
 
 typedef signed short       zb_int16_t;
-
-typedef void               zb_void_t;
 
 
 /** @brief General purpose boolean type. */

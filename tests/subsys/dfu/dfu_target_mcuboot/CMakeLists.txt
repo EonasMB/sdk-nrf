@@ -1,7 +1,7 @@
 #
 # Copyright (c) 2019 Nordic Semiconductor
 #
-# SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
 #
 
 cmake_minimum_required(VERSION 3.13.1)
@@ -14,7 +14,7 @@ target_sources(app PRIVATE ${app_sources})
 
 target_sources(app
   PRIVATE
-  ${ZEPHYR_BASE}/../nrf/subsys/dfu/src/dfu_target_mcuboot.c
+  ${ZEPHYR_BASE}/../nrf/subsys/dfu/dfu_target/src/dfu_target_mcuboot.c
   )
 
 target_include_directories(app
