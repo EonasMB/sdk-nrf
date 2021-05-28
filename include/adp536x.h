@@ -47,7 +47,7 @@
 #define ADP536X_OC_CHG_THRESHOLD_400mA	0x07
 
 /* Macro for setting buck output voltage */
-#define ADP536X_VOUT_BUCK(volt) ((u8_t)(((volt)-0.6+0.025)/0.05))
+#define ADP536X_VOUT_BUCK(volt) ((uint8_t)(((volt)-0.6+0.025)/0.05))
 
 /**
  * @brief Initialize ADP536X.
@@ -69,7 +69,7 @@ int adp536x_init(const char *dev_name);
  * @return 0 If the operation was successful.
  *           Otherwise, a (negative) error code is returned.
  */
-int adp536x_get_reg(u8_t reg, u8_t *buff);
+int adp536x_get_reg(uint8_t reg, uint8_t *buff);
 
 /**
  * @brief Arbitrary register write function
@@ -81,7 +81,7 @@ int adp536x_get_reg(u8_t reg, u8_t *buff);
  * @return 0 If the operation was successful,
  *           Otherwise, a (negative) error code is returned.
  */
-int adp536x_write_reg(u8_t reg, u8_t val);
+int adp536x_write_reg(uint8_t reg, uint8_t val);
 
 /**
  * @brief Set the VBUS current limit.
@@ -184,7 +184,7 @@ int adp536x_buckbst_enable(bool enable);
  * @retval 0 If the operation was successful.
  *           Otherwise, a (negative) error code is returned.
  */
-int adp536x_buck_set(u8_t value);
+int adp536x_buck_set(uint8_t value);
 
 
 /**

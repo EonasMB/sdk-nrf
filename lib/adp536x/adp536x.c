@@ -260,7 +260,7 @@ int adp536x_oc_chg_current_set(uint8_t value)
 					ADP536X_BAT_OC_CHG_OC_CHG(value));
 }
 
-int adp536x_buck_set(u8_t value)
+int adp536x_buck_set(uint8_t value)
 {
 
 	return adp536x_reg_write_mask(ADP536X_BUCK_OUTPUT,
@@ -288,7 +288,7 @@ int adp536x_fuel_gauge_enable_set(bool enable)
 																	ADP536X_FUEL_GAUGE_MODE_EN_FG(enable));
 }
 
-int adp536x_fuel_gauge_get(u8_t *gauge)
+int adp536x_fuel_gauge_get(uint8_t *gauge)
 {
 		return adp536x_reg_read(ADP536X_BAT_SOC, gauge);
 }
