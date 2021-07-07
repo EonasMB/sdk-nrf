@@ -9,7 +9,7 @@
 #include <fw_info.h>
 #include <pm_config.h>
 #include <drivers/flash.h>
-#include <power/reboot.h>
+#include <sys/reboot.h>
 
 #define S1_ADDRESS PM_S1_ADDRESS
 #define S1_SIZE 0x8000
@@ -34,7 +34,6 @@ void test_fw_info_invalidate(void)
 	int ret;
 
 	const struct device *flash_dev = device_get_binding(PM_S0_DEV_NAME);
-	(void) flash_write_protection_set(flash_dev, false);
 
 	/* Write a dummy upgrade to S1 */
 	if (!fw_info_check(S1_ADDRESS)) {

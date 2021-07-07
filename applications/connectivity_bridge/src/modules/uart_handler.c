@@ -25,8 +25,7 @@ LOG_MODULE_REGISTER(MODULE, CONFIG_BRIDGE_UART_LOG_LEVEL);
 #define UART_SLAB_ALIGNMENT 4
 #define UART_RX_TIMEOUT_MS 1
 
-#if (defined(CONFIG_DEVICE_POWER_MANAGEMENT) &&\
-	defined(CONFIG_SYS_PM_POLICY_APP))
+#if defined(CONFIG_PM_DEVICE)
 #define UART_SET_PM_STATE true
 #else
 #define UART_SET_PM_STATE false
@@ -247,9 +246,9 @@ static void set_uart_power_state(uint8_t dev_idx, bool active)
 	uint32_t current_state;
 	uint32_t target_state;
 
-	target_state = active ? DEVICE_PM_ACTIVE_STATE : DEVICE_PM_SUSPEND_STATE;
+	target_state = active ? PM_DEVICE_STATE_ACTIVE : PM_DEVICE_STATE_SUSPEND;
 
-	err = device_get_power_state(dev, &current_state);
+	err = pm_device_state_get(dev, &current_state);
 	if (err) {
 		LOG_ERR("device_get_power_state: %d", err);
 		return;
@@ -259,11 +258,7 @@ static void set_uart_power_state(uint8_t dev_idx, bool active)
 		return;
 	}
 
-	err = device_set_power_state(
-		dev,
-		target_state,
-		NULL,
-		NULL);
+	err = pm_device_state_set(dev, target_state, NULL, NULL);
 	if (err) {
 		LOG_ERR("device_set_power_state: %d", err);
 		return;

@@ -9,7 +9,7 @@
 #include <drivers/watchdog.h>
 
 #define MODULE watchdog
-#include "module_state_event.h"
+#include <caf/events/module_state_event.h>
 
 #include <logging/log.h>
 LOG_MODULE_REGISTER(MODULE, CONFIG_DESKTOP_WATCHDOG_LOG_LEVEL);
@@ -19,7 +19,7 @@ LOG_MODULE_REGISTER(MODULE, CONFIG_DESKTOP_WATCHDOG_LOG_LEVEL);
 struct wdt_data_storage {
 	const struct device *wdt_drv;
 	int wdt_channel_id;
-	struct k_delayed_work work;
+	struct k_work_delayable work;
 };
 static struct wdt_data_storage wdt_data;
 
@@ -34,7 +34,7 @@ static void watchdog_feed_worker(struct k_work *work_desc)
 		LOG_ERR("Cannot feed watchdog. Error code: %d", err);
 		module_set_state(MODULE_STATE_ERROR);
 	} else {
-		k_delayed_work_submit(&data->work,
+		k_work_reschedule(&data->work,
 				      K_MSEC(WDT_FEED_WORKER_DELAY_MS));
 	}
 }
@@ -82,16 +82,18 @@ static int watchdog_feed_enable(struct wdt_data_storage *data)
 {
 	__ASSERT_NO_MSG(data != NULL);
 
-	k_delayed_work_init(&data->work, watchdog_feed_worker);
-	int err = k_delayed_work_submit(&data->work, K_NO_WAIT);
+	k_work_init_delayable(&data->work, watchdog_feed_worker);
+	int ret = k_work_schedule(&data->work, K_NO_WAIT);
 
-	if (err) {
-		LOG_ERR("Cannot start watchdog feed worker!"
-				" Error code: %d", err);
+	if (ret != 1) {
+		LOG_ERR("Cannot start watchdog feed worker! Error code: %d", ret);
+		ret = (ret == 0) ? (-EALREADY) : (ret);
 	} else {
 		LOG_INF("Watchdog feed enabled. Timeout: %d", WDT_FEED_WORKER_DELAY_MS);
+		ret = 0;
 	}
-	return err;
+
+	return ret;
 }
 
 static int watchdog_enable(struct wdt_data_storage *data)

@@ -25,8 +25,8 @@ extern "C" {
 
 /** The lightness server's value is > 0 */
 #define LIGHTNESS_SRV_FLAG_IS_ON 0
-/** Flag for preventing startup behavior on the server */
-#define LIGHTNESS_SRV_FLAG_NO_START 1
+/** Power-up sequence and scene store/recall behaviors are controlled by Light LC server. */
+#define LIGHTNESS_SRV_FLAG_EXTENDED_BY_LIGHT_CTRL 1
 
 enum light_repr {
 	ACTUAL,
@@ -141,10 +141,13 @@ static inline uint16_t light_to_repr(uint16_t light, enum light_repr repr)
 struct bt_mesh_lightness_srv;
 struct bt_mesh_lightness_cli;
 
+void lightness_srv_disable_control(struct bt_mesh_lightness_srv *srv);
+
 void lightness_srv_change_lvl(struct bt_mesh_lightness_srv *srv,
 			      struct bt_mesh_msg_ctx *ctx,
 			      struct bt_mesh_lightness_set *set,
-			      struct bt_mesh_lightness_status *status);
+			      struct bt_mesh_lightness_status *status,
+			      bool publish);
 
 /* For testing purposes */
 int lightness_cli_light_get(struct bt_mesh_lightness_cli *cli,
@@ -163,6 +166,8 @@ int lightness_cli_light_set_unack(struct bt_mesh_lightness_cli *cli,
 
 void lightness_srv_default_set(struct bt_mesh_lightness_srv *srv,
 			       struct bt_mesh_msg_ctx *ctx, uint16_t set);
+
+int lightness_on_power_up(struct bt_mesh_lightness_srv *srv);
 
 #ifdef __cplusplus
 }

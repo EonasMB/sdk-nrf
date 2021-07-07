@@ -65,7 +65,13 @@ struct bt_mesh_light_xyl_srv;
 struct bt_mesh_light_xy_set {
 	/** xy set parameters */
 	struct bt_mesh_light_xy params;
-	/** Transition time parameters for the state change. */
+	/**
+	 * Transition time parameters for the state change, or NULL.
+	 *
+	 * When sending, setting the transition to NULL makes the receiver use
+	 * its default transition time parameters, or 0 if no default transition
+	 * time is set.
+	 */
 	struct bt_mesh_model_transition *transition;
 };
 
@@ -111,25 +117,25 @@ struct bt_mesh_light_xyl_srv_handlers {
 	 *
 	 * @param[in] srv Server the Range state was changed on.
 	 * @param[in] ctx Context of the set message that triggered the update.
-	 * @param[in] old The old Range.
-	 * @param[in] new The new Range.
+	 * @param[in] old_range The old Range.
+	 * @param[in] new_range The new Range.
 	 */
 	void (*const range_update)(struct bt_mesh_light_xyl_srv *srv,
 				   struct bt_mesh_msg_ctx *ctx,
-				   const struct bt_mesh_light_xy_range *old,
-				   const struct bt_mesh_light_xy_range *new);
+				   const struct bt_mesh_light_xy_range *old_range,
+				   const struct bt_mesh_light_xy_range *new_range);
 
 	/** @brief The Default Parameter state has changed.
 	 *
 	 * @param[in] srv Server the Default Parameter state was changed on.
 	 * @param[in] ctx Context of the set message that triggered the update.
-	 * @param[in] old The old Default Parameters.
-	 * @param[in] new The new Default Parameters.
+	 * @param[in] old_default The old Default Parameters.
+	 * @param[in] new_default The new Default Parameters.
 	 */
 	void (*const default_update)(struct bt_mesh_light_xyl_srv *srv,
 				     struct bt_mesh_msg_ctx *ctx,
-				     const struct bt_mesh_light_xy *old,
-				     const struct bt_mesh_light_xy *new);
+				     const struct bt_mesh_light_xy *old_default,
+				     const struct bt_mesh_light_xy *new_default);
 };
 
 /**
@@ -151,12 +157,15 @@ struct bt_mesh_light_xyl_srv {
 		BT_MESH_LIGHT_XYL_MSG_LEN_RANGE_STATUS)];
 	/** Transaction ID tracker for the set messages. */
 	struct bt_mesh_tid_ctx prev_transaction;
+
+#if CONFIG_BT_SETTINGS
+	/** Storage timer */
+	struct k_work_delayable store_timer;
+#endif
 	/** Current range parameters */
 	struct bt_mesh_light_xy_range range;
 	/** Handler function structure. */
 	const struct bt_mesh_light_xyl_srv_handlers *handlers;
-	/** Scene entry */
-	struct bt_mesh_scene_entry scene;
 
 	/** The last known xy Level. */
 	struct bt_mesh_light_xy xy_last;

@@ -49,17 +49,6 @@ struct bt_mesh_tid_ctx {
 	uint8_t tid; /**< Transaction ID. */
 };
 
-/**
- * Acknowledged message context for tracking the status of model messages
- * pending a response.
- */
-struct bt_mesh_model_ack_ctx {
-	struct k_sem sem; /**< Sync semaphore. */
-	uint32_t op; /**< Opcode we're waiting for. */
-	uint16_t dst; /**< Address of the node that should respond. */
-	void *user_data; /**< User specific parameter. */
-};
-
 /** Model status values. */
 enum bt_mesh_model_status {
 	/** Command successfully processed. */
@@ -80,6 +69,23 @@ enum bt_mesh_rgb_ch {
 
 	BT_MESH_RGB_CHANNELS,
 };
+
+/** @brief Get the total transition time
+ *
+ *  @param[in] trans Transition time, or NULL.
+ *
+ *  @return Total time of the given transition, in milliseconds, or 0 if
+ *          @p trans is NULL.
+ */
+static inline int32_t
+bt_mesh_model_transition_time(const struct bt_mesh_model_transition *trans)
+{
+	if (!trans) {
+		return 0;
+	}
+
+	return trans->delay + trans->time;
+}
 
 /** @cond INTERNAL_HIDDEN
  * @def BT_MESH_MODEL_USER_DATA

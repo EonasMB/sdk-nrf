@@ -15,6 +15,13 @@ config PARTITION_MANAGER_ENABLED
 	  in how parent images impose options on child images. Don't
 	  change the value of this option.
 
+# Override this option to use custom flash map implementation when partition
+# manager is enabled.
+config FLASH_MAP_CUSTOM
+	bool
+	default y
+	depends on PARTITION_MANAGER_ENABLED
+
 # These values are now set by partition manager, so hide the option.
 config SRAM_SIZE
 	int
@@ -95,16 +102,33 @@ module=802154_RPMSG
 source "${ZEPHYR_BASE}/../nrf/subsys/partition_manager/Kconfig.template.build_strategy_domain"
 endif
 
+if BT_RPC && SOC_NRF5340_CPUAPP
+module=RPC_HOST
+source "${ZEPHYR_BASE}/../nrf/subsys/partition_manager/Kconfig.template.build_strategy_domain"
+
+DT_CHOSEN_Z_IPC_SHM := zephyr,ipc_shm
+
+config BT_RPC_HOST_NRF53_SRAM_SIZE
+	# Hidden configuration to expose DT property as kconfig variable
+	hex
+	default "$(dt_chosen_reg_size_hex,$(DT_CHOSEN_Z_IPC_SHM))"
+
+endif
+
 endmenu # NCS samples configurations
 
 config PM_SINGLE_IMAGE
-	bool "Use the Partition Manager for single image builds"
+	bool "Use the Partition Manager for single image builds" if !BUILD_WITH_TFM
+	default y if BUILD_WITH_TFM
 	select PARTITION_MANAGER_ENABLED
 	help
 	  Use the Partition Manager feature to partition the device even if
 	  only a single image is included in the build. This is typically set
 	  when a subsystem that defines its own Partition Manager configuration
 	  is included in the build.
+
+	  The option is always defined in builds where a TF-M image for the
+	  Secure Execution environment is generated.
 
 menuconfig PM_EXTERNAL_FLASH
 	bool "Support external flash in Partition Manager"
@@ -126,45 +150,6 @@ config PM_EXTERNAL_FLASH_BASE
 	default 0
 
 endif
-
-config BUILD_WITH_TFM
-	bool
-	select PM_SINGLE_IMAGE
-
-if BUILD_WITH_TFM
-
-config PM_PARTITION_SIZE_TFM_SRAM
-	hex "Memory reserved for TFM_RAM."
-	default 0x10000 if NRF_MODEM_LIB
-	default 0x16000 if SOC_NRF9160
-	default 0x40000 if SOC_NRF5340_CPUAPP
-	help
-	  Memory set aside for the TFM_SRAM partition.
-
-partition=BL2
-partition-size=0x8000
-rsource "Kconfig.template.partition_size"
-
-partition=TFM
-partition-size=0x40000
-rsource "Kconfig.template.partition_size"
-
-partition=TFM_EXTRA
-partition-size=0x10000
-rsource "Kconfig.template.partition_size"
-
-if NRF_MODEM_LIB
-
-config TFM_PROFILE
-	string "The build profile used for TFM Secure image."
-	default "profile_small"
-	help
-	  Use profile_small when the modem is enabled to get the RAM usage below
-	  64 kB, so the Modem's IPC RAM area can fit at 0x10000.
-	  This overrides the default TFM_PROFILE.
-
-endif # TFM_PROFILE
-endif # BUILD_WITH_TFM
 
 config PM_IMAGE_NOT_BUILT_FROM_SOURCE
 	bool

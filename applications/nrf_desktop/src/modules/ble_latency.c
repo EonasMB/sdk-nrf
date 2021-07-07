@@ -7,12 +7,14 @@
 #include <zephyr/types.h>
 #include <bluetooth/conn.h>
 
+#include <caf/events/ble_common_event.h>
+#include <caf/events/ble_smp_event.h>
 #include "ble_event.h"
 #include "config_event.h"
-#include "power_event.h"
+#include <caf/events/power_event.h>
 
 #define MODULE ble_latency
-#include "module_state_event.h"
+#include <caf/events/module_state_event.h>
 
 #include <logging/log.h>
 LOG_MODULE_REGISTER(MODULE, CONFIG_DESKTOP_BLE_LATENCY_LOG_LEVEL);
@@ -26,8 +28,8 @@ LOG_MODULE_REGISTER(MODULE, CONFIG_DESKTOP_BLE_LATENCY_LOG_LEVEL);
 #define REG_CONN_INTERVAL_BLE_DEFAULT	0x0006
 
 static struct bt_conn *active_conn;
-static struct k_delayed_work security_timeout;
-static struct k_delayed_work low_latency_check;
+static struct k_work_delayable security_timeout;
+static struct k_work_delayable low_latency_check;
 
 enum {
 	CONN_LOW_LATENCY_ENABLED	= BIT(0),
@@ -137,10 +139,11 @@ static void update_llpm_conn_latency_lock(void)
 		if (!(latency_state & CONN_LOW_LATENCY_ENABLED)) {
 			set_conn_latency(true);
 		}
-		k_delayed_work_cancel(&low_latency_check);
+		/* Cancel cannot fail if executed from another work's context. */
+		(void)k_work_cancel_delayable(&low_latency_check);
 	} else if (latency_state & CONN_LOW_LATENCY_ENABLED) {
 		latency_state &= ~CONN_LOW_LATENCY_REQUIRED;
-		k_delayed_work_submit(&low_latency_check,
+		k_work_reschedule(&low_latency_check,
 				      LOW_LATENCY_CHECK_PERIOD_MS);
 	}
 }
@@ -155,11 +158,11 @@ static void low_latency_check_fn(struct k_work *w)
 	 * required to establish security on some hosts.
 	 */
 	if (!(latency_state & CONN_IS_SECURED)) {
-		k_delayed_work_submit(&low_latency_check,
+		k_work_reschedule(&low_latency_check,
 				      LOW_LATENCY_CHECK_PERIOD_MS);
 	} else if (latency_state & CONN_LOW_LATENCY_REQUIRED) {
 		latency_state &= ~CONN_LOW_LATENCY_REQUIRED;
-		k_delayed_work_submit(&low_latency_check,
+		k_work_reschedule(&low_latency_check,
 				      LOW_LATENCY_CHECK_PERIOD_MS);
 	} else {
 		LOG_INF("Low latency timed out");
@@ -185,11 +188,12 @@ static void conn_params_updated(const struct ble_peer_conn_params_event *event)
 	if (event->latency == 0) {
 		latency_state |= CONN_LOW_LATENCY_ENABLED;
 		latency_state &= ~CONN_LOW_LATENCY_REQUIRED;
-		k_delayed_work_submit(&low_latency_check,
+		k_work_reschedule(&low_latency_check,
 				      LOW_LATENCY_CHECK_PERIOD_MS);
 	} else {
 		latency_state &= ~CONN_LOW_LATENCY_ENABLED;
-		k_delayed_work_cancel(&low_latency_check);
+		/* Cancel cannot fail if executed from another work's context. */
+		(void)k_work_cancel_delayable(&low_latency_check);
 	}
 
 	update_llpm_conn_latency_lock();
@@ -197,8 +201,8 @@ static void conn_params_updated(const struct ble_peer_conn_params_event *event)
 
 static void init(void)
 {
-	k_delayed_work_init(&security_timeout, security_timeout_fn);
-	k_delayed_work_init(&low_latency_check, low_latency_check_fn);
+	k_work_init_delayable(&security_timeout, security_timeout_fn);
+	k_work_init_delayable(&low_latency_check, low_latency_check_fn);
 }
 
 static void use_low_latency(void)
@@ -241,7 +245,7 @@ static bool event_handler(const struct event_header *eh)
 				latency_state |= CONN_LOW_LATENCY_LOCKED;
 			}
 			set_init_conn_params();
-			k_delayed_work_submit(&security_timeout,
+			k_work_reschedule(&security_timeout,
 					      SECURITY_FAIL_TIMEOUT_MS);
 			break;
 
@@ -251,13 +255,15 @@ static bool event_handler(const struct event_header *eh)
 
 			/* Clear BLE latency state. */
 			latency_state = 0;
-			k_delayed_work_cancel(&low_latency_check);
-			k_delayed_work_cancel(&security_timeout);
+			/* Cancel cannot fail if executed from another work's context. */
+			(void)k_work_cancel_delayable(&low_latency_check);
+			(void)k_work_cancel_delayable(&security_timeout);
 			break;
 
 		case PEER_STATE_SECURED:
 			latency_state |= CONN_IS_SECURED;
-			k_delayed_work_cancel(&security_timeout);
+			/* Cancel cannot fail if executed from another work's context. */
+			(void)k_work_cancel_delayable(&security_timeout);
 			break;
 
 		default:
@@ -275,7 +281,7 @@ static bool event_handler(const struct event_header *eh)
 		return false;
 	}
 
-	if (IS_ENABLED(CONFIG_DESKTOP_SMP_ENABLE) &&
+	if (IS_ENABLED(CONFIG_CAF_BLE_SMP) &&
 	    is_ble_smp_transfer_event(eh)) {
 		use_low_latency();
 
@@ -319,7 +325,7 @@ EVENT_LISTENER(MODULE, event_handler);
 EVENT_SUBSCRIBE(MODULE, module_state_event);
 EVENT_SUBSCRIBE(MODULE, ble_peer_event);
 EVENT_SUBSCRIBE(MODULE, ble_peer_conn_params_event);
-#if CONFIG_DESKTOP_SMP_ENABLE
+#if CONFIG_CAF_BLE_SMP
 EVENT_SUBSCRIBE(MODULE, ble_smp_transfer_event);
 #endif
 #if CONFIG_DESKTOP_CONFIG_CHANNEL_ENABLE

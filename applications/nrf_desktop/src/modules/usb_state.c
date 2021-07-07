@@ -15,7 +15,7 @@
 
 
 #define MODULE usb_state
-#include "module_state_event.h"
+#include <caf/events/module_state_event.h>
 
 #include <logging/log.h>
 LOG_MODULE_REGISTER(MODULE, CONFIG_DESKTOP_USB_STATE_LOG_LEVEL);
@@ -26,7 +26,7 @@ LOG_MODULE_REGISTER(MODULE, CONFIG_DESKTOP_USB_STATE_LOG_LEVEL);
 #include "hid_event.h"
 #include "usb_event.h"
 #include "config_event.h"
-#include "power_event.h"
+#include <caf/events/power_event.h>
 
 #if CONFIG_DESKTOP_USB_SELECTIVE_REPORT_SUBSCRIPTION
   #include "usb_state_def.h"
@@ -261,8 +261,8 @@ static void send_hid_report(const struct hid_report_event *event)
 		usb_hid->sent_report_id = event->dyndata.data[0];
 	}
 
-	int err = hid_int_ep_write(usb_hid->dev, event->dyndata.data,
-				   event->dyndata.size, NULL);
+	int err = hid_int_ep_write(usb_hid->dev, report_buffer,
+				   report_size, NULL);
 
 	if (err) {
 		LOG_ERR("Cannot send report (%d)", err);
@@ -389,7 +389,8 @@ static void broadcast_subscription_change(struct usb_hid_device *usb_hid)
 		usb_hid->report_enabled[REPORT_ID_BOOT_KEYBOARD] = new_boot_enabled;
 	}
 
-	LOG_INF("USB HID %p %sabled", usb_hid, (state == USB_STATE_ACTIVE) ? ("en"):("dis"));
+	LOG_INF("USB HID %p %sabled", (void *)usb_hid,
+		(state == USB_STATE_ACTIVE) ? ("en"):("dis"));
 	if (state == USB_STATE_ACTIVE) {
 		LOG_INF("%s_PROTOCOL active", usb_hid->hid_protocol ? "REPORT" : "BOOT");
 	}

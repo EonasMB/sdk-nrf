@@ -6,6 +6,7 @@
 
 #include <bluetooth/hci.h>
 #include <bluetooth/hci_err.h>
+#include <bluetooth/buf.h>
 #include <sys/byteorder.h>
 #include <sdc_hci.h>
 #include <sdc_hci_cmd_controller_baseband.h>
@@ -17,6 +18,10 @@
 
 #include "hci_internal.h"
 
+#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
+#define LOG_MODULE_NAME sdc_hci_internal
+#include "common/log.h"
+
 #define CMD_COMPLETE_MIN_SIZE (BT_HCI_EVT_HDR_SIZE \
 				+ sizeof(struct bt_hci_evt_cmd_complete) \
 				+ sizeof(struct bt_hci_evt_cc_status))
@@ -24,7 +29,7 @@
 static struct
 {
 	bool occurred; /**< Set in only one execution context */
-	uint8_t raw_event[CONFIG_BT_RX_BUF_LEN];
+	uint8_t raw_event[BT_BUF_EVT_RX_SIZE];
 } cmd_complete_or_status;
 
 static bool command_generates_command_complete_event(uint16_t hci_opcode)
@@ -311,7 +316,7 @@ static void supported_commands(sdc_hci_ip_supported_commands_t *cmds)
 }
 
 #if defined(CONFIG_BT_HCI_VS)
-static void vs_supported_commands(sdc_hci_vs_zephyr_supported_commands_t *cmds)
+static void vs_zephyr_supported_commands(sdc_hci_vs_zephyr_supported_commands_t *cmds)
 {
 	memset(cmds, 0, sizeof(*cmds));
 
@@ -321,6 +326,7 @@ static void vs_supported_commands(sdc_hci_vs_zephyr_supported_commands_t *cmds)
 #if defined(CONFIG_BT_HCI_VS_EXT)
 	cmds->write_bd_addr = 1;
 	cmds->read_static_addresses = 1;
+	cmds->read_key_hierarchy_roots = 1;
 	cmds->read_chip_temperature = 1;
 
 #if defined(CONFIG_BT_CTLR_TX_PWR_DYNAMIC_CONTROL)
@@ -328,6 +334,18 @@ static void vs_supported_commands(sdc_hci_vs_zephyr_supported_commands_t *cmds)
 	cmds->read_tx_power_level = 1;
 #endif /* CONFIG_BT_CTLR_TX_PWR_DYNAMIC_CONTROL */
 #endif /* CONFIG_BT_HCI_VS_EXT */
+}
+
+static void vs_supported_commands(sdc_hci_vs_supported_vs_commands_t *cmds)
+{
+	memset(cmds, 0, sizeof(*cmds));
+
+	cmds->read_supported_vs_commands = 1;
+	cmds->llpm_mode_set = 1;
+	cmds->conn_update = 1;
+	cmds->conn_event_extend = 1;
+	cmds->qos_conn_event_report_enable = 1;
+	cmds->event_length_set = 1;
 }
 #endif	/* CONFIG_BT_HCI_VS */
 
@@ -809,7 +827,7 @@ static uint8_t vs_cmd_put(uint8_t const * const cmd,
 		return sdc_hci_cmd_vs_zephyr_read_version_info((void *)event_out_params);
 	case SDC_HCI_OPCODE_CMD_VS_ZEPHYR_READ_SUPPORTED_COMMANDS:
 		*param_length_out += sizeof(sdc_hci_cmd_vs_zephyr_read_supported_commands_return_t);
-		vs_supported_commands((void *)event_out_params);
+		vs_zephyr_supported_commands((void *)event_out_params);
 		return 0;
 
 #if defined(CONFIG_BT_HCI_VS_EXT)
@@ -818,6 +836,10 @@ static uint8_t vs_cmd_put(uint8_t const * const cmd,
 		*param_length_out += sizeof(sdc_hci_cmd_vs_zephyr_read_static_addresses_return_t);
 		*param_length_out += sizeof(sdc_hci_vs_zephyr_static_address_t);
 		return sdc_hci_cmd_vs_zephyr_read_static_addresses((void *)event_out_params);
+	case SDC_HCI_OPCODE_CMD_VS_ZEPHYR_READ_KEY_HIERARCHY_ROOTS:
+		*param_length_out +=
+				sizeof(sdc_hci_cmd_vs_zephyr_read_key_hierarchy_roots_return_t);
+		return sdc_hci_cmd_vs_zephyr_read_key_hierarchy_roots((void *)event_out_params);
 	case SDC_HCI_OPCODE_CMD_VS_ZEPHYR_WRITE_BD_ADDR:
 		return sdc_hci_cmd_vs_zephyr_write_bd_addr((void *)cmd_params);
 
@@ -832,7 +854,10 @@ static uint8_t vs_cmd_put(uint8_t const * const cmd,
 							    (void *)event_out_params);
 #endif /* CONFIG_BT_CTLR_TX_PWR_DYNAMIC_CONTROL */
 #endif /* CONFIG_BT_HCI_VS_EXT */
-
+	case SDC_HCI_OPCODE_CMD_VS_READ_SUPPORTED_VS_COMMANDS:
+		*param_length_out += sizeof(sdc_hci_cmd_vs_read_supported_vs_commands_return_t);
+		vs_supported_commands((void *)event_out_params);
+		return 0;
 	case SDC_HCI_OPCODE_CMD_VS_LLPM_MODE_SET:
 		return sdc_hci_cmd_vs_llpm_mode_set((void *)cmd_params);
 	case SDC_HCI_OPCODE_CMD_VS_CONN_UPDATE:

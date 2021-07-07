@@ -29,14 +29,6 @@ LOG_MODULE_REGISTER(MODULE, CONFIG_DATA_MODULE_LOG_LEVEL);
 #define DEVICE_SETTINGS_KEY			"data_module"
 #define DEVICE_SETTINGS_CONFIG_KEY		"config"
 
-/* Default device configuration values. */
-#define DEFAULT_ACTIVE_TIMEOUT_SECONDS		120
-#define DEFAULT_MOVEMENT_RESOLUTION_SECONDS	120
-#define DEFAULT_MOVEMENT_TIMEOUT_SECONDS	3600
-#define DEFAULT_ACCELEROMETER_THRESHOLD		10
-#define DEFAULT_GPS_TIMEOUT_SECONDS		60
-#define DEFAULT_DEVICE_MODE			true
-
 /* Value that is used to limit the maximum allowed device configuration value
  * for the accelerometer threshold. 100 m/s2 ~ 10.2g.
  */
@@ -66,14 +58,12 @@ static enum state_type {
  * Upon a LTE connection loss the device will keep sampling/storing data in
  * the buffers, and empty the buffers in batches upon a reconnect.
  */
-static struct cloud_data_gps gps_buf[CONFIG_GPS_BUFFER_MAX];
-static struct cloud_data_sensors sensors_buf[CONFIG_SENSOR_BUFFER_MAX];
-static struct cloud_data_ui ui_buf[CONFIG_UI_BUFFER_MAX];
-static struct cloud_data_accelerometer accel_buf[CONFIG_ACCEL_BUFFER_MAX];
-static struct cloud_data_battery bat_buf[CONFIG_BAT_BUFFER_MAX];
-
-static struct cloud_data_modem_dynamic
-			modem_dyn_buf[CONFIG_MODEM_BUFFER_DYNAMIC_MAX];
+static struct cloud_data_gps gps_buf[CONFIG_DATA_GPS_BUFFER_COUNT];
+static struct cloud_data_sensors sensors_buf[CONFIG_DATA_SENSOR_BUFFER_COUNT];
+static struct cloud_data_ui ui_buf[CONFIG_DATA_UI_BUFFER_COUNT];
+static struct cloud_data_accelerometer accel_buf[CONFIG_DATA_ACCELEROMETER_BUFFER_COUNT];
+static struct cloud_data_battery bat_buf[CONFIG_DATA_BATTERY_BUFFER_COUNT];
+static struct cloud_data_modem_dynamic modem_dyn_buf[CONFIG_DATA_MODEM_DYNAMIC_BUFFER_COUNT];
 
 /* Static modem data does not change between firmware versions and does not
  * have to be buffered.
@@ -90,15 +80,15 @@ static int head_bat_buf;
 
 /* Default device configuration. */
 static struct cloud_data_cfg current_cfg = {
-	.gps_timeout = DEFAULT_GPS_TIMEOUT_SECONDS,
-	.active_mode  = DEFAULT_DEVICE_MODE,
-	.active_wait_timeout = DEFAULT_ACTIVE_TIMEOUT_SECONDS,
-	.movement_resolution = DEFAULT_MOVEMENT_RESOLUTION_SECONDS,
-	.movement_timeout = DEFAULT_MOVEMENT_TIMEOUT_SECONDS,
-	.accelerometer_threshold = DEFAULT_ACCELEROMETER_THRESHOLD
+	.gps_timeout			= CONFIG_DATA_GPS_TIMEOUT_SECONDS,
+	.active_mode			= (IS_ENABLED(CONFIG_DATA_DEVICE_MODE) ? true : false),
+	.active_wait_timeout		= CONFIG_DATA_ACTIVE_TIMEOUT_SECONDS,
+	.movement_resolution		= CONFIG_DATA_MOVEMENT_RESOLUTION_SECONDS,
+	.movement_timeout		= CONFIG_DATA_MOVEMENT_TIMEOUT_SECONDS,
+	.accelerometer_threshold	= CONFIG_DATA_ACCELEROMETER_THRESHOLD
 };
 
-static struct k_delayed_work data_send_work;
+static struct k_work_delayable data_send_work;
 
 /* List used to keep track of responses from other modules with data that is
  * requested to be sampled/published.
@@ -147,6 +137,7 @@ K_MSGQ_DEFINE(msgq_data, sizeof(struct data_msg_data),
 static struct module_data self = {
 	.name = "data",
 	.msg_q = &msgq_data,
+	.supports_shutdown = true,
 };
 
 /* Forward declarations */
@@ -490,8 +481,17 @@ static void config_distribute(enum data_module_event_type type)
 	EVENT_SUBMIT(data_module_event);
 }
 
-/* This function allocates buffer on the heap, which needs to be freed afte use.
- */
+static void config_status_set_all(bool fresh)
+{
+	current_cfg.active_mode_fresh = fresh;
+	current_cfg.gps_timeout_fresh = fresh;
+	current_cfg.active_wait_timeout_fresh = fresh;
+	current_cfg.movement_resolution_fresh = fresh;
+	current_cfg.movement_timeout_fresh = fresh;
+	current_cfg.accelerometer_threshold_fresh = fresh;
+}
+
+/* This function allocates buffer on the heap, which needs to be freed after use. */
 static void data_send(void)
 {
 	int err;
@@ -520,8 +520,7 @@ static void data_send(void)
 		/* This error might occurs when data has not been obtained prior
 		 * to data encoding.
 		 */
-		LOG_DBG("Ringbuffers empty...");
-		LOG_DBG("No data to encode, error: %d", err);
+		LOG_DBG("No new data to encode, error: %d", err);
 		return;
 	} else if (err) {
 		LOG_ERR("Error encoding message %d", err);
@@ -580,17 +579,21 @@ static void config_get(void)
 	SEND_EVENT(data, DATA_EVT_CONFIG_GET);
 }
 
-static void config_send(void)
+static void config_send(bool send_all)
 {
 	int err;
 	struct cloud_codec_data codec;
 	struct data_module_event *evt;
 
+	if (send_all || IS_ENABLED(CONFIG_DATA_SEND_ALL_DEVICE_CONFIGURATIONS)) {
+		config_status_set_all(true);
+	}
+
 	err = cloud_codec_encode_config(&codec, &current_cfg);
 	if (err) {
 		LOG_ERR("Error encoding configuration, error: %d", err);
 		SEND_ERROR(data, DATA_EVT_ERROR, err);
-		return;
+		goto exit;
 	}
 
 	evt = new_data_module_event();
@@ -600,8 +603,11 @@ static void config_send(void)
 
 	data_list_add_pending(codec.buf, codec.len, CONFIG);
 	EVENT_SUBMIT(evt);
-}
 
+exit:
+	/* Reset the status flag of all configuations after the data has been sent. */
+	config_status_set_all(false);
+}
 
 static void data_ui_send(void)
 {
@@ -618,7 +624,10 @@ static void data_ui_send(void)
 	}
 
 	err = cloud_codec_encode_ui_data(&codec, &ui_buf[head_ui_buf]);
-	if (err) {
+	if (err == -ENODATA) {
+		LOG_DBG("No new UI data to encode, error: %d", err);
+		return;
+	} else if (err) {
 		LOG_ERR("Encoding button press, error: %d", err);
 		SEND_ERROR(data, DATA_EVT_ERROR, err);
 		return;
@@ -645,7 +654,7 @@ static void data_send_work_fn(struct k_work *work)
 	SEND_EVENT(data, DATA_EVT_DATA_READY);
 
 	requested_data_clear();
-	k_delayed_work_cancel(&data_send_work);
+	k_work_cancel_delayable(&data_send_work);
 }
 
 static void requested_data_status_set(enum app_module_data_type data_type)
@@ -677,6 +686,112 @@ static void requested_data_list_set(enum app_module_data_type *data_list,
 	}
 
 	recv_req_data_count = count;
+}
+
+static void new_config_handle(struct cloud_data_cfg *new_config)
+{
+	bool config_change = false;
+
+	/* Guards making sure that only new configuration values are applied. */
+	if (current_cfg.active_mode != new_config->active_mode) {
+		current_cfg.active_mode = new_config->active_mode;
+
+		if (current_cfg.active_mode) {
+			LOG_WRN("New Device mode: Active");
+		} else {
+			LOG_WRN("New Device mode: Passive");
+		}
+
+		config_change = true;
+		current_cfg.active_mode_fresh = true;
+	}
+
+	if (new_config->gps_timeout > 0) {
+		if (current_cfg.gps_timeout != new_config->gps_timeout) {
+			current_cfg.gps_timeout = new_config->gps_timeout;
+
+			LOG_WRN("New GPS timeout: %d", current_cfg.gps_timeout);
+
+			config_change = true;
+			current_cfg.gps_timeout_fresh = true;
+		}
+	} else {
+		LOG_ERR("New GPS timeout out of range: %d", new_config->gps_timeout);
+	}
+
+	if (new_config->active_wait_timeout > 0) {
+		if (current_cfg.active_wait_timeout != new_config->active_wait_timeout) {
+			current_cfg.active_wait_timeout = new_config->active_wait_timeout;
+
+			LOG_WRN("New Active wait timeout: %d", current_cfg.active_wait_timeout);
+
+			config_change = true;
+			current_cfg.active_wait_timeout_fresh = true;
+		}
+	} else {
+		LOG_ERR("New Active timeout out of range: %d", new_config->active_wait_timeout);
+	}
+
+	if (new_config->movement_resolution > 0) {
+		if (current_cfg.movement_resolution != new_config->movement_resolution) {
+			current_cfg.movement_resolution = new_config->movement_resolution;
+
+			LOG_WRN("New Movement resolution: %d", current_cfg.movement_resolution);
+
+			config_change = true;
+			current_cfg.movement_resolution_fresh = true;
+		}
+	} else {
+		LOG_ERR("New Movement resolution out of range: %d",
+			new_config->movement_resolution);
+	}
+
+	if (new_config->movement_timeout > 0) {
+		if (current_cfg.movement_timeout != new_config->movement_timeout) {
+			current_cfg.movement_timeout = new_config->movement_timeout;
+
+			LOG_WRN("New Movement timeout: %d", current_cfg.movement_timeout);
+
+			config_change = true;
+			current_cfg.movement_timeout_fresh = true;
+		}
+	} else {
+		LOG_ERR("New Movement timeout out of range: %d", new_config->movement_timeout);
+	}
+
+	if ((new_config->accelerometer_threshold < ACCELEROMETER_S_M2_MAX) &&
+	    (new_config->accelerometer_threshold > 0)) {
+		if (current_cfg.accelerometer_threshold != new_config->accelerometer_threshold) {
+			current_cfg.accelerometer_threshold = new_config->accelerometer_threshold;
+
+			LOG_WRN("New Accelerometer threshold: %f",
+				current_cfg.accelerometer_threshold);
+
+			config_change = true;
+			current_cfg.accelerometer_threshold_fresh = true;
+		}
+	} else {
+		LOG_ERR("New Accelerometer threshold out of range: %f",
+			new_config->accelerometer_threshold);
+	}
+
+	/* If there has been a change in the currently applied device configuration we want to store
+	 * the configuration to flash, distribute it to other modules and acknowledge the change
+	 * back to cloud.
+	 */
+	if (config_change) {
+		int err = save_config(&current_cfg, sizeof(current_cfg));
+
+		if (err) {
+			LOG_WRN("Configuration not stored, error: %d", err);
+		}
+
+		config_distribute(DATA_EVT_CONFIG_READY);
+		config_send(false);
+		return;
+	}
+
+	LOG_DBG("No new values in incoming device configuration update message");
 }
 
 /* Message handler for STATE_CLOUD_DISCONNECTED. */
@@ -714,142 +829,35 @@ static void on_cloud_state_connected(struct data_msg_data *msg)
 	}
 
 	if (IS_EVENT(msg, cloud, CLOUD_EVT_CONFIG_EMPTY)) {
-		config_send();
+		config_send(true);
 		return;
-	}
-
-	/* Distribute new configuration received from cloud. */
-	if (IS_EVENT(msg, cloud, CLOUD_EVT_CONFIG_RECEIVED)) {
-
-		int err;
-		bool config_change = false;
-		struct cloud_data_cfg new = {
-		.active_mode =
-			msg->module.cloud.data.config.active_mode,
-		.active_wait_timeout =
-			msg->module.cloud.data.config.active_wait_timeout,
-		.movement_resolution =
-			msg->module.cloud.data.config.movement_resolution,
-		.movement_timeout =
-			msg->module.cloud.data.config.movement_timeout,
-		.gps_timeout =
-			msg->module.cloud.data.config.gps_timeout,
-		.accelerometer_threshold =
-			msg->module.cloud.data.config.accelerometer_threshold,
-		};
-
-		/* Guards making sure that only valid configuration values are
-		 * applied.
-		 */
-		if (current_cfg.active_mode != new.active_mode) {
-			current_cfg.active_mode = new.active_mode;
-
-			if (current_cfg.active_mode) {
-				LOG_WRN("New Device mode: Active");
-			} else {
-				LOG_WRN("New Device mode: Passive");
-			}
-			config_change = true;
-		}
-
-		if (new.gps_timeout > 0) {
-			if (current_cfg.gps_timeout != new.gps_timeout) {
-				current_cfg.gps_timeout = new.gps_timeout;
-				LOG_WRN("New GPS timeout: %d",
-					current_cfg.gps_timeout);
-				config_change = true;
-			}
-		} else {
-			LOG_ERR("New GPS timeout out of range: %d",
-				new.gps_timeout);
-		}
-
-		if (new.active_wait_timeout > 0) {
-			if (current_cfg.active_wait_timeout !=
-			    new.active_wait_timeout) {
-				current_cfg.active_wait_timeout =
-					new.active_wait_timeout;
-				LOG_WRN("New Active wait timeout: %d",
-					current_cfg.active_wait_timeout);
-				config_change = true;
-			}
-		} else {
-			LOG_ERR("New Active timeout out of range: %d",
-				new.active_wait_timeout);
-		}
-
-		if (new.movement_resolution > 0) {
-			if (current_cfg.movement_resolution !=
-			    new.movement_resolution) {
-				current_cfg.movement_resolution =
-					new.movement_resolution;
-				LOG_WRN("New Movement resolution: %d",
-					current_cfg.movement_resolution);
-				config_change = true;
-			}
-		} else {
-			LOG_ERR("New Movement resolution out of range: %d",
-				new.movement_resolution);
-		}
-
-		if (new.movement_timeout > 0) {
-			if (current_cfg.movement_timeout !=
-			    new.movement_timeout) {
-				current_cfg.movement_timeout =
-					new.movement_timeout;
-				LOG_WRN("New Movement timeout: %d",
-					current_cfg.movement_timeout);
-				config_change = true;
-			}
-		} else {
-			LOG_ERR("New Movement timeout out of range: %d",
-				new.movement_timeout);
-		}
-
-		if ((new.accelerometer_threshold < ACCELEROMETER_S_M2_MAX) &&
-		    (new.accelerometer_threshold > 0)) {
-			if (current_cfg.accelerometer_threshold !=
-			    new.accelerometer_threshold) {
-				current_cfg.accelerometer_threshold =
-					new.accelerometer_threshold;
-				LOG_WRN("New Accelerometer threshold: %f",
-					current_cfg.accelerometer_threshold);
-				config_change = true;
-			}
-		} else {
-			LOG_ERR("New Accelerometer threshold out of range: %f",
-				new.accelerometer_threshold);
-		}
-
-		err = save_config(&current_cfg,
-					sizeof(current_cfg));
-		if (err) {
-			LOG_WRN("Configuration not stored, error: %d",
-				err);
-		}
-
-		/* Distribute the configuration to other modules regardless
-		 * if the values has changed or not. This is to make sure that
-		 * the cloud module (which does the initial decoding of the
-		 * incoming configuration) always has the latest valid
-		 * configuration.
-		 */
-		config_distribute(DATA_EVT_CONFIG_READY);
-
-		/* Acknowledge configuration to cloud if there has been a change
-		 * in the current device configuration.
-		 */
-		if (config_change) {
-			config_send();
-		} else {
-			LOG_WRN("No change in current device configuration");
-		}
 	}
 }
 
 /* Message handler for all states. */
 static void on_all_states(struct data_msg_data *msg)
 {
+	/* Distribute new configuration received from cloud. */
+	if (IS_EVENT(msg, cloud, CLOUD_EVT_CONFIG_RECEIVED)) {
+		struct cloud_data_cfg new = {
+			.active_mode =
+				msg->module.cloud.data.config.active_mode,
+			.active_wait_timeout =
+				msg->module.cloud.data.config.active_wait_timeout,
+			.movement_resolution =
+				msg->module.cloud.data.config.movement_resolution,
+			.movement_timeout =
+				msg->module.cloud.data.config.movement_timeout,
+			.gps_timeout =
+				msg->module.cloud.data.config.gps_timeout,
+			.accelerometer_threshold =
+				msg->module.cloud.data.config.accelerometer_threshold,
+		};
+
+		new_config_handle(&new);
+		return;
+	}
+
 	if (IS_EVENT(msg, app, APP_EVT_START)) {
 		config_distribute(DATA_EVT_CONFIG_INIT);
 	}
@@ -858,7 +866,7 @@ static void on_all_states(struct data_msg_data *msg)
 		/* The module doesn't have anything to shut down and can
 		 * report back immediately.
 		 */
-		SEND_EVENT(data, DATA_EVT_SHUTDOWN_READY);
+		SEND_SHUTDOWN_ACK(data, DATA_EVT_SHUTDOWN_READY, self.id);
 		state_set(STATE_SHUTDOWN);
 	}
 
@@ -872,7 +880,7 @@ static void on_all_states(struct data_msg_data *msg)
 		/* Start countdown until data must have been received by the
 		 * Data module in order to be sent to cloud
 		 */
-		k_delayed_work_submit(&data_send_work,
+		k_work_reschedule(&data_send_work,
 				      K_SECONDS(msg->module.app.timeout));
 
 		return;
@@ -898,19 +906,29 @@ static void on_all_states(struct data_msg_data *msg)
 	}
 
 	if (IS_EVENT(msg, modem, MODEM_EVT_MODEM_STATIC_DATA_READY)) {
-		modem_stat.appv =
-			msg->module.modem.data.modem_static.app_version;
-		modem_stat.brdv =
-			msg->module.modem.data.modem_static.board_version;
-		modem_stat.nw_lte_m =
-			msg->module.modem.data.modem_static.nw_mode_ltem;
-		modem_stat.nw_nb_iot =
-			msg->module.modem.data.modem_static.nw_mode_nbiot;
+		modem_stat.nw_lte_m = msg->module.modem.data.modem_static.nw_mode_ltem;
+		modem_stat.nw_nb_iot = msg->module.modem.data.modem_static.nw_mode_nbiot;
+		modem_stat.nw_gps = msg->module.modem.data.modem_static.nw_mode_gps;
 		modem_stat.bnd = msg->module.modem.data.modem_static.band;
-		modem_stat.fw = msg->module.modem.data.modem_static.modem_fw;
-		modem_stat.iccid = msg->module.modem.data.modem_static.iccid;
 		modem_stat.ts = msg->module.modem.data.modem_static.timestamp;
 		modem_stat.queued = true;
+
+		BUILD_ASSERT(sizeof(modem_stat.appv) >=
+			     sizeof(msg->module.modem.data.modem_static.app_version));
+
+		BUILD_ASSERT(sizeof(modem_stat.brdv) >=
+			     sizeof(msg->module.modem.data.modem_static.board_version));
+
+		BUILD_ASSERT(sizeof(modem_stat.fw) >=
+			     sizeof(msg->module.modem.data.modem_static.modem_fw));
+
+		BUILD_ASSERT(sizeof(modem_stat.iccid) >=
+			     sizeof(msg->module.modem.data.modem_static.iccid));
+
+		strcpy(modem_stat.appv, msg->module.modem.data.modem_static.app_version);
+		strcpy(modem_stat.brdv, msg->module.modem.data.modem_static.board_version);
+		strcpy(modem_stat.fw, msg->module.modem.data.modem_static.modem_fw);
+		strcpy(modem_stat.iccid, msg->module.modem.data.modem_static.iccid);
 
 		requested_data_status_set(APP_DATA_MODEM_STATIC);
 	}
@@ -923,12 +941,25 @@ static void on_all_states(struct data_msg_data *msg)
 		struct cloud_data_modem_dynamic new_modem_data = {
 			.area = msg->module.modem.data.modem_dynamic.area_code,
 			.cell = msg->module.modem.data.modem_dynamic.cell_id,
-			.ip = msg->module.modem.data.modem_dynamic.ip_address,
-			.mccmnc = msg->module.modem.data.modem_dynamic.mccmnc,
 			.rsrp = msg->module.modem.data.modem_dynamic.rsrp,
 			.ts = msg->module.modem.data.modem_dynamic.timestamp,
+
+			.area_code_fresh = msg->module.modem.data.modem_dynamic.area_code_fresh,
+			.cell_id_fresh = msg->module.modem.data.modem_dynamic.cell_id_fresh,
+			.rsrp_fresh = msg->module.modem.data.modem_dynamic.rsrp_fresh,
+			.ip_address_fresh = msg->module.modem.data.modem_dynamic.ip_address_fresh,
+			.mccmnc_fresh = msg->module.modem.data.modem_dynamic.mccmnc_fresh,
 			.queued = true
 		};
+
+		BUILD_ASSERT(sizeof(new_modem_data.ip) >=
+			     sizeof(msg->module.modem.data.modem_dynamic.ip_address));
+
+		BUILD_ASSERT(sizeof(new_modem_data.mccmnc) >=
+			     sizeof(msg->module.modem.data.modem_dynamic.mccmnc));
+
+		strcpy(new_modem_data.ip, msg->module.modem.data.modem_dynamic.ip_address);
+		strcpy(new_modem_data.mccmnc, msg->module.modem.data.modem_dynamic.mccmnc);
 
 		cloud_codec_populate_modem_dynamic_buffer(
 						modem_dyn_buf,
@@ -978,11 +1009,6 @@ static void on_all_states(struct data_msg_data *msg)
 	}
 
 	if (IS_EVENT(msg, sensor, SENSOR_EVT_MOVEMENT_DATA_READY)) {
-		if (current_cfg.active_mode) {
-			/* Do not store movement data in active mode. */
-			return;
-		}
-
 		struct cloud_data_accelerometer new_movement_data = {
 			.values[0] = msg->module.sensor.data.accel.values[0],
 			.values[1] = msg->module.sensor.data.accel.values[1],
@@ -998,15 +1024,38 @@ static void on_all_states(struct data_msg_data *msg)
 
 	if (IS_EVENT(msg, gps, GPS_EVT_DATA_READY)) {
 		struct cloud_data_gps new_gps_data = {
-			.acc = msg->module.gps.data.gps.accuracy,
-			.alt = msg->module.gps.data.gps.altitude,
-			.hdg = msg->module.gps.data.gps.heading,
-			.lat = msg->module.gps.data.gps.latitude,
-			.longi = msg->module.gps.data.gps.longitude,
-			.spd = msg->module.gps.data.gps.speed,
 			.gps_ts = msg->module.gps.data.gps.timestamp,
-			.queued = true
+			.queued = true,
+			.format = msg->module.gps.data.gps.format
 		};
+
+		switch (msg->module.gps.data.gps.format) {
+		case GPS_MODULE_DATA_FORMAT_PVT: {
+			/* Add PVT data */
+			new_gps_data.pvt.acc = msg->module.gps.data.gps.pvt.accuracy;
+			new_gps_data.pvt.alt = msg->module.gps.data.gps.pvt.altitude;
+			new_gps_data.pvt.hdg = msg->module.gps.data.gps.pvt.heading;
+			new_gps_data.pvt.lat = msg->module.gps.data.gps.pvt.latitude;
+			new_gps_data.pvt.longi = msg->module.gps.data.gps.pvt.longitude;
+			new_gps_data.pvt.spd = msg->module.gps.data.gps.pvt.speed;
+			new_gps_data.pvt.spd = msg->module.gps.data.gps.pvt.speed;
+
+		};
+			break;
+		case GPS_MODULE_DATA_FORMAT_NMEA: {
+			/* Add NMEA data */
+			BUILD_ASSERT(sizeof(new_gps_data.nmea) >=
+				     sizeof(msg->module.gps.data.gps.nmea));
+
+			strcpy(new_gps_data.nmea, msg->module.gps.data.gps.nmea);
+		};
+			break;
+		case GPS_MODULE_DATA_FORMAT_INVALID:
+			/* Fall through */
+		default:
+			LOG_WRN("Event does not carry valid GPS data");
+			return;
+		}
 
 		cloud_codec_populate_gps_buffer(gps_buf, &new_gps_data,
 						&head_gps_buf,
@@ -1032,11 +1081,15 @@ static void module_thread_fn(void)
 
 	self.thread_id = k_current_get();
 
-	module_start(&self);
+	err = module_start(&self);
+	if (err) {
+		LOG_ERR("Failed starting module, error: %d", err);
+		SEND_ERROR(data, DATA_EVT_ERROR, err);
+	}
 
 	state_set(STATE_CLOUD_DISCONNECTED);
 
-	k_delayed_work_init(&data_send_work, data_send_work_fn);
+	k_work_init_delayable(&data_send_work, data_send_work_fn);
 
 	err = setup();
 	if (err) {

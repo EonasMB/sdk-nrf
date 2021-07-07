@@ -31,11 +31,29 @@ extern "C" {
  *
  * @retval 0        On success.
  * @retval -EINVAL  If any of the argument are incorrect.
+ * @retval -EFAULT  If the protection was not applied properly.
  * @retval -ENOSPC  If function is called too many times. Applies to
  *                  devices where there is a limited number of configuration
  *                  registers which are used for all address ranges.
  */
 int fprotect_area(uint32_t start, size_t length);
+
+#if defined(CONFIG_FPROTECT_ENABLE_NO_ACCESS)
+/**
+ * @brief Protect flash area against reads/writes.
+ *
+ * @param[in]  start   Start of range to protect.
+ * @param[in]  length  Length in bytes of range to protect.
+ *
+ * @retval 0        On success.
+ * @retval -EINVAL  If any of the argument are incorrect.
+ * @retval -EFAULT  If the protection was not applied properly.
+ * @retval -ENOSPC  If function is called too many times. Applies to
+ *                  devices where there is a limited number of configuration
+ *                  registers which are used for all address ranges.
+ */
+int fprotect_area_no_access(uint32_t start, size_t length);
+#endif
 
 #ifdef __cplusplus
 }

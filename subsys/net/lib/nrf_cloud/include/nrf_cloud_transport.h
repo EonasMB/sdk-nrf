@@ -61,7 +61,7 @@ struct nct_evt {
 int nct_socket_get(void);
 
 /**@brief Initialization routine for the transport. */
-int nct_init(void);
+int nct_init(const char * const client_id);
 
 /**@brief Establishes the transport connection. */
 int nct_connect(void);
@@ -128,7 +128,7 @@ int nct_keepalive_time_left(void);
 int nct_input(const struct nct_evt *evt);
 
 /**@brief Signal to apply FOTA update. */
-void nct_apply_update(void);
+void nct_apply_update(const struct nrf_cloud_evt * const evt);
 
 #ifdef __cplusplus
 }

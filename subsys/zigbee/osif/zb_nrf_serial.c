@@ -110,7 +110,7 @@ static void uart_rx_timeout(struct k_timer *dummy)
 static void handle_rx_ready_evt(const struct device *dev)
 {
 	int recv_len = 0;
-	uint8_t buffer[CONFIG_ZIGBEE_UART_RX_BUF_LEN];
+	uint8_t buffer[CONFIG_ZIGBEE_UART_RX_BUF_LEN] = {0};
 
 	/* Copy data to the user's buffer. */
 	if (uart_rx_buf && (uart_rx_buf_offset < uart_rx_buf_len)) {
@@ -278,7 +278,7 @@ void zb_osif_uart_wake_up(void)
 	uart_irq_rx_enable(uart_dev);
 }
 
-void zb_osif_serial_put_bytes(zb_uint8_t *buf, zb_short_t len)
+void zb_osif_serial_put_bytes(const zb_uint8_t *buf, zb_short_t len)
 {
 #if !(defined(ZB_HAVE_ASYNC_SERIAL) && \
 	defined(CONFIG_ZBOSS_TRACE_LOG_LEVEL_OFF))

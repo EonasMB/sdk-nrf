@@ -20,7 +20,6 @@
 #include <modem/at_cmd_parser.h>
 
 #define INVALID_SOCKET	-1
-#define INVALID_PORT	-1
 #define INVALID_SEC_TAG	-1
 #define INVALID_ROLE	-1
 
@@ -49,12 +48,22 @@ bool slm_util_cmd_casecmp(const char *cmd, const char *slm_cmd);
 /**
  * @brief Detect hexdecimal data type
  *
- * @param[in] hex Hex arrary to be encoded
- * @param[in] hex_len Length of hex array
+ * @param[in] data Hex arrary to be encoded
+ * @param[in] data_len Length of hex array
  *
  * @return true if the input is hexdecimal array, otherwise false
  */
-bool slm_util_hex_check(const uint8_t *hex, uint16_t hex_len);
+bool slm_util_hex_check(const uint8_t *data, uint16_t data_len);
+
+/**
+ * @brief Detect hexdecimal string data type
+ *
+ * @param[in] data Hexdecimal string arrary to be checked
+ * @param[in] data_len Length of array
+ *
+ * @return true if the input is hexdecimal string array, otherwise false
+ */
+bool slm_util_hexstr_check(const uint8_t *data, uint16_t data_len);
 
 /**
  * @brief Encode hex array to hexdecimal string (ASCII text)
@@ -93,7 +102,6 @@ int slm_util_atoh(const char *ascii, uint16_t ascii_len,
  * @return true if text string is IPv4 address, false otherwise
  */
 bool check_for_ipv4(const char *address, uint8_t length);
-
 
 /**brief use AT command to get IPv4 address
  *

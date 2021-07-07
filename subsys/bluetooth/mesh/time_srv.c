@@ -321,27 +321,55 @@ static void handle_role_set(struct bt_mesh_model *model,
 }
 
 const struct bt_mesh_model_op _bt_mesh_time_srv_op[] = {
-	{ BT_MESH_TIME_OP_TIME_GET, BT_MESH_TIME_MSG_LEN_GET, handle_time_get },
-	{ BT_MESH_TIME_OP_TIME_STATUS, BT_MESH_TIME_MSG_LEN_TIME_STATUS,
-	  handle_time_status },
-	{ BT_MESH_TIME_OP_TIME_ZONE_GET, BT_MESH_TIME_MSG_LEN_GET,
-	  handle_zone_get },
-	{ BT_MESH_TIME_OP_TAI_UTC_DELTA_GET, BT_MESH_TIME_MSG_LEN_GET,
-	  handle_tai_utc_delta_get },
+	{
+		BT_MESH_TIME_OP_TIME_GET,
+		BT_MESH_TIME_MSG_LEN_GET,
+		handle_time_get,
+	},
+	{
+		BT_MESH_TIME_OP_TIME_STATUS,
+		BT_MESH_TIME_MSG_LEN_TIME_STATUS,
+		handle_time_status,
+	},
+	{
+		BT_MESH_TIME_OP_TIME_ZONE_GET,
+		BT_MESH_TIME_MSG_LEN_GET,
+		handle_zone_get,
+	},
+	{
+		BT_MESH_TIME_OP_TAI_UTC_DELTA_GET,
+		BT_MESH_TIME_MSG_LEN_GET,
+		handle_tai_utc_delta_get,
+	},
 	BT_MESH_MODEL_OP_END,
 };
 
 const struct bt_mesh_model_op _bt_mesh_time_setup_srv_op[] = {
-	{ BT_MESH_TIME_OP_TIME_SET, BT_MESH_TIME_MSG_LEN_TIME_SET,
-	  handle_time_set },
-	{ BT_MESH_TIME_OP_TIME_ZONE_SET, BT_MESH_TIME_MSG_LEN_TIME_ZONE_SET,
-	  handle_zone_set },
-	{ BT_MESH_TIME_OP_TAI_UTC_DELTA_SET,
-	  BT_MESH_TIME_MSG_LEN_TAI_UTC_DELTA_SET, handle_tai_utc_delta_set },
-	{ BT_MESH_TIME_OP_TIME_ROLE_GET, BT_MESH_TIME_MSG_LEN_GET,
-	  handle_role_get },
-	{ BT_MESH_TIME_OP_TIME_ROLE_SET, BT_MESH_TIME_MSG_LEN_TIME_ROLE_SET,
-	  handle_role_set },
+	{
+		BT_MESH_TIME_OP_TIME_SET,
+		BT_MESH_TIME_MSG_LEN_TIME_SET,
+		handle_time_set,
+	},
+	{
+		BT_MESH_TIME_OP_TIME_ZONE_SET,
+		BT_MESH_TIME_MSG_LEN_TIME_ZONE_SET,
+		handle_zone_set,
+	},
+	{
+		BT_MESH_TIME_OP_TAI_UTC_DELTA_SET,
+		BT_MESH_TIME_MSG_LEN_TAI_UTC_DELTA_SET,
+		handle_tai_utc_delta_set,
+	},
+	{
+		BT_MESH_TIME_OP_TIME_ROLE_GET,
+		BT_MESH_TIME_MSG_LEN_GET,
+		handle_role_get,
+	},
+	{
+		BT_MESH_TIME_OP_TIME_ROLE_SET,
+		BT_MESH_TIME_MSG_LEN_TIME_ROLE_SET,
+		handle_role_set,
+	},
 	BT_MESH_MODEL_OP_END,
 };
 
@@ -351,21 +379,19 @@ static int bt_mesh_time_srv_init(struct bt_mesh_model *model)
 
 	srv->model = model;
 	net_buf_simple_init(srv->pub.msg, 0);
-	if (IS_ENABLED(CONFIG_BT_MESH_MODEL_EXTENSIONS)) {
-		/* Model extensions:
-		 * To simplify the model extension tree, we're flipping the
-		 * relationship between the time server and the time
-		 * setup server. In the specification, the time setup
-		 * server extends the time server, which is the opposite of
-		 * what we're doing here. This makes no difference for the mesh
-		 * stack, but it makes it a lot easier to extend this model, as
-		 * we won't have to support multiple extenders.
-		 */
-		bt_mesh_model_extend(
-			model,
-			bt_mesh_model_find(bt_mesh_model_elem(model),
-					   BT_MESH_MODEL_ID_TIME_SETUP_SRV));
-	}
+	/* Model extensions:
+	 * To simplify the model extension tree, we're flipping the
+	 * relationship between the time server and the time
+	 * setup server. In the specification, the time setup
+	 * server extends the time server, which is the opposite of
+	 * what we're doing here. This makes no difference for the mesh
+	 * stack, but it makes it a lot easier to extend this model, as
+	 * we won't have to support multiple extenders.
+	 */
+	bt_mesh_model_extend(
+		model,
+		bt_mesh_model_find(bt_mesh_model_elem(model),
+				   BT_MESH_MODEL_ID_TIME_SETUP_SRV));
 
 	return 0;
 }

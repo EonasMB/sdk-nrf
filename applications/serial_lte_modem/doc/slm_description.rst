@@ -7,7 +7,9 @@ Application description
    :local:
    :depth: 3
 
-The Serial LTE Modem (SLM) application demonstrates how to use the nRF9160 as a stand-alone LTE modem that can be controlled by proprietary AT commands.
+The Serial LTE Modem (SLM) application demonstrates how to use the nRF9160 as a stand-alone LTE modem that can be controlled by AT commands.
+
+The application accepts both the modem-specific AT commands documented in the `nRF91 AT Commands Reference Guide <AT Commands Reference Guide_>`_ and proprietary AT commands documented in :ref:`SLM_AT_intro`.
 
 Requirements
 ************
@@ -62,7 +64,7 @@ Connecting with an external MCU
 If you run your user application on an external MCU (for example, an nRF52 Series DK), you can control the modem on the nRF9160 directly from the application.
 See the `nRF52 client for serial LTE modem application`_ repository for a sample implementation of such an application.
 
-To connect with an external MCU, you must set the configuration options :option:`CONFIG_SLM_GPIO_WAKEUP` and :option:`CONFIG_SLM_CONNECT_UART_2` in the serial LTE modem application configuration.
+To connect with an external MCU, you must set the configuration option :option:`CONFIG_UART_2_NRF_HW_ASYNC_TIMER` and :option:`CONFIG_SLM_CONNECT_UART_2` in the serial LTE modem application configuration.
 
 The following table shows how to connect an nRF52 Series DK to the nRF9160 DK to be able to communicate through UART:
 
@@ -112,7 +114,12 @@ Configuration options
 
 Check and configure the following configuration options for the sample:
 
-.. option:: CONFIG_SLM_NATIVE_TLS
+.. option:: CONFIG_SLM_CUSTOMIZED - Flag for customized functionality
+
+    This flag can be used to enable customized functionality.
+    To add your own custom logic, enclose the code by ``#if defined(CONFIG_SLM_CUSTOMIZED)`` and enable this flag.
+
+.. option:: CONFIG_SLM_NATIVE_TLS - Use Zephyr mbedTLS
 
    This option enables using Zephyr's mbedTLS.
    It requires additional configuration.
@@ -135,10 +142,17 @@ Check and configure the following configuration options for the sample:
 
 .. option:: CONFIG_SLM_GPIO_WAKEUP - Support of GPIO wakeup
 
-   This option enables using GPIO to wake up from sleep mode.
-   Select this option if you want to test the application with an external CPU.
+   This option enables using GPIO to wake up nRF9160 from deep sleep mode.
+   Select this option if you enable :option:`CONFIG_SLM_START_SLEEP` to put nRF9160 into deep sleep mode after startup.
 
-   If this option is not selected, you must reset the kit to exit sleep mode.
+   This option is selected by default.
+
+.. option:: CONFIG_SLM_START_SLEEP - Enter sleep on startup
+
+   This option makes nRF9160 enter deep sleep after startup.
+
+   This option is not selected by default.
+   It requires :option:`CONFIG_SLM_GPIO_WAKEUP` to be selected.
 
 .. option:: CONFIG_SLM_INTERFACE_PIN - Interface GPIO to wake up or exit idle mode
 
@@ -154,10 +168,6 @@ Check and configure the following configuration options for the sample:
    The maximum value is 708, which is the maximum segment size (MSS) defined for the modem.
 
    This option impacts the total RAM usage.
-
-.. option:: CONFIG_SLM_NULL_TERMINATION - NULL termination
-
-   This option configures the application to accept AT commands without a termination character.
 
 .. option:: CONFIG_SLM_CR_TERMINATION - CR termination
 
@@ -176,13 +186,9 @@ Check and configure the following configuration options for the sample:
    This option specifies the number of IPv4 addresses that you can add to an allowlist for TCP connections.
    If the list is set, only connections from the specified addresses are allowed.
 
-.. option:: CONFIG_SLM_TCP_POLL_TIME - Poll time-out in seconds for TCP connection
+.. option:: CONFIG_SLM_TCP_POLL_TIME - Poll timeout in seconds for TCP connection
 
-   This option specifies the poll time-out for the TCP connection, in seconds.
-
-.. option:: CONFIG_SLM_TCP_CONN_TIME - Connection time-out in seconds for TCP server
-
-   This option specifies the connection time-out for the TCP connection, in seconds.
+   This option specifies the poll timeout for the TCP connection, in seconds.
 
 .. option:: CONFIG_SLM_DATAMODE_HWFC - UART HWFC for data mode
 
@@ -198,6 +204,10 @@ Check and configure the following configuration options for the sample:
 
    This option specifies the time (in seconds) of UART silence before and after the pattern string that is used to exit data mode.
    The default value is 1 second.
+
+.. option:: CONFIG_SLM_SMS - SMS support in SLM
+
+   This option enables additional AT commands for using SMS service.
 
 .. option:: CONFIG_SLM_GPS - GPS support in SLM
 
@@ -235,6 +245,9 @@ Check and configure the following configuration options for the sample:
 
    This option enables additional AT commands for using the HTTP client service.
 
+.. option:: CONFIG_SLM_TWI - TWI support in SLM
+
+   This option enables additional AT commands for using the TWI service.
 
 Additional configuration
 ========================
@@ -333,11 +346,9 @@ Dependencies
 
 This application uses the following |NCS| libraries:
 
-* :ref:`lte_lc_readme`
 * :ref:`at_cmd_readme`
 * :ref:`at_cmd_parser_readme`
 * :ref:`at_notif_readme`
-* :ref:`modem_info_readme`
 * :ref:`lib_ftp_client`
 * :ref:`supl_client`
 

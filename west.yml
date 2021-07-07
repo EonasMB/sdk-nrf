@@ -11,9 +11,7 @@
 # https://developer.nordicsemi.com/nRF_Connect_SDK/doc/latest/zephyr/guides/west/index.html
 
 manifest:
-  # This west.yml requires west 0.9 or later, because the "submodules"
-  # feature used below was introduced then.
-  version: 0.9
+  version: "0.10"
 
   # "remotes" is a list of locations where git repositories are cloned
   # and fetched from.
@@ -35,11 +33,17 @@ manifest:
       url-base: https://github.com/alexa
     - name: nordicsemi
       url-base: https://github.com/NordicSemiconductor
+    - name: pelioniot
+      url-base: https://github.com/PelionIoT
+    - name: memfault
+      url-base: https://github.com/memfault
 
   # If not otherwise specified, the projects below should be obtained
   # from the ncs remote.
   defaults:
     remote: ncs
+
+  group-filter: [-homekit, -nrf-802154, -find-my]
 
   # "projects" is a list of git repositories which make up the NCS
   # source code.
@@ -52,12 +56,12 @@ manifest:
     # https://developer.nordicsemi.com/nRF_Connect_SDK/doc/latest/zephyr/guides/modules.html
     - name: zephyr
       repo-path: sdk-zephyr
-      revision: v2.4.99-ncs2
+      revision: v2.6.0-rc1-ncs1
       import:
         # In addition to the zephyr repository itself, NCS also
         # imports the contents of zephyr/west.yml at the above
         # revision. Only the projects explicitly named in the
-        # following whitelist are imported.
+        # following allowlist are imported.
         #
         # Note that the zephyr west extensions (like 'build', 'flash',
         # 'debug', etc.) are automatically provided by this import, so
@@ -65,12 +69,13 @@ manifest:
         # the zephyr project.
         #
         # Please keep this list sorted alphabetically.
-        name-whitelist:
+        name-allowlist:
           - canopennode
           - cmsis
           - civetweb
           - edtt
           - fatfs
+          - hal_nordic
           - hal_st
           - libmetal
           - littlefs
@@ -82,10 +87,21 @@ manifest:
           - net-tools
           - nrf_hw_models
           - open-amp
-          - openthread
           - segger
           - tinycbor
           - tinycrypt
+          - TraceRecorderSource
+    # This version of NCS uses an openthread commit which is
+    # available in the zephyrproject-rtos fork, but which is
+    # slightly ahead of what was available in zephyr/west.yml
+    # at the above revision.
+    #
+    # Maintainers: this entry should be moved back to the allowlist
+    # during the next upmerge.
+    - name: openthread
+      remote: zephyrproject
+      path: modules/lib/openthread
+      revision: f460532d4afa5d49feba241e5dc31c56123d31a8
 
     # NCS repositories.
     #
@@ -93,28 +109,24 @@ manifest:
     # changes.
     - name: mcuboot
       repo-path: sdk-mcuboot
-      revision: v1.7.99-ncs1
+      revision: v1.7.99-ncs2
       path: bootloader/mcuboot
     - name: nrfxlib
       repo-path: sdk-nrfxlib
       path: nrfxlib
-      revision: v1.5.1
-    - name: hal_nordic
-      repo-path: sdk-hal_nordic
-      path: modules/hal/nordic
-      revision: v1.5.1
+      revision: v1.6.0
     - name: trusted-firmware-m
       repo-path: sdk-trusted-firmware-m
       path: modules/tee/tfm
-      revision: v1.2.99-ncs1
+      revision: v1.3.99-ncs1
     - name: tfm-mcuboot # This is used by the trusted-firmware-m module.
       repo-path: sdk-mcuboot
       path: modules/tee/tfm-mcuboot
-      revision: 81d19f017f18f1bc6bea906d96fd45fba3672064
-    - name: connectedhomeip
+      revision: v1.7.2
+    - name: matter
       repo-path: sdk-connectedhomeip
-      path: modules/lib/connectedhomeip
-      revision: v1.5.1
+      path: modules/lib/matter
+      revision: v1.6.0
       submodules:
         - name: nlio
           path: third_party/nlio/repo
@@ -122,6 +134,16 @@ manifest:
           path: third_party/nlassert/repo
         - name: pigweed
           path: third_party/pigweed/repo
+    - name: nrf-802154
+      repo-path: sdk-nrf-802154
+      path: nrf-802154
+      revision: v1.6.0
+      groups:
+      - nrf-802154
+    - name: cjson
+      repo-path: sdk-cjson
+      path: modules/lib/cjson
+      revision: 50bddddf7fb45e4ce87bc3619df06db55d181856
     # Other third-party repositories.
     - name: cmock
       path: test/cmock
@@ -134,7 +156,7 @@ manifest:
     - name: mbedtls-nrf
       path: mbedtls
       repo-path: mbedtls
-      revision: mbedtls-2.24.0
+      revision: mbedtls-2.26.0
       remote: armmbed
     - name: nanopb
       path: modules/lib/nanopb
@@ -144,10 +166,28 @@ manifest:
       path: modules/alexa-embedded
       revision: face92d8c62184832793f518bb1f19379538c5c1
       remote: alexa
+    - name: mbed-cloud-client
+      path: modules/lib/pelion-dm
+      revision: 4.9.1
+      remote: pelioniot
     - name: cddl-gen
       remote: nordicsemi
       revision: 24f1b2b0c64c694b7f9ac1b7eab60b39236ca0bf
       path: modules/lib/cddl-gen
+    - name: homekit
+      repo-path: sdk-homekit
+      revision: v1.6.0
+      groups:
+      - homekit
+    - name: find-my
+      repo-path: sdk-find-my
+      revision: v1.6.0
+      groups:
+      - find-my
+    - name: memfault-firmware-sdk
+      path: modules/lib/memfault-firmware-sdk
+      revision: 0.21.1
+      remote: memfault
 
   # West-related configuration for the nrf repository.
   self:

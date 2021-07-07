@@ -16,6 +16,7 @@
 #include <drivers/pwm.h>
 #include <logging/log.h>
 #include <dk_buttons_and_leds.h>
+#include <settings/settings.h>
 
 #include <zboss_api.h>
 #include <zboss_api_addons.h>
@@ -23,6 +24,8 @@
 #include <zigbee/zigbee_app_utils.h>
 #include <zigbee/zigbee_error_handler.h>
 #include <zb_nrf_platform.h>
+
+#include "zcl_scenes.h"
 
 #define RUN_STATUS_LED                  DK_LED1
 #define RUN_LED_BLINK_INTERVAL          1000
@@ -90,7 +93,7 @@
 
 #if DT_NODE_HAS_STATUS(PWM_DK_LED4_NODE, okay)
 /* Get the defines from overlay file. */
-#define PWM_DK_LED4_DRIVER              DT_PWMS_LABEL(PWM_DK_LED4_NODE)
+#define PWM_DK_LED4_CTLR                DT_PWMS_CTLR(PWM_DK_LED4_NODE)
 #define PWM_DK_LED4_CHANNEL             DT_PWMS_CHANNEL(PWM_DK_LED4_NODE)
 #define PWM_DK_LED4_FLAGS               FLAGS_OR_ZERO(PWM_DK_LED4_NODE)
 #else
@@ -218,10 +221,10 @@ static void button_changed(uint32_t button_state, uint32_t has_changed)
 /**@brief Function for initializing additional PWM leds. */
 static void pwm_led_init(void)
 {
-	led_pwm_dev = device_get_binding(PWM_DK_LED4_DRIVER);
-
-	if (!led_pwm_dev) {
-		LOG_ERR("Cannot find %s!", PWM_DK_LED4_DRIVER);
+	led_pwm_dev = DEVICE_DT_GET(PWM_DK_LED4_CTLR);
+	if (!device_is_ready(led_pwm_dev)) {
+		LOG_ERR("Error: PWM device %s is not ready",
+			led_pwm_dev->name);
 	}
 }
 
@@ -406,8 +409,7 @@ static void zcl_device_cb(zb_bufid_t bufid)
 	zb_uint8_t cluster_id;
 	zb_uint8_t attr_id;
 	zb_zcl_device_callback_param_t  *device_cb_param =
-		ZB_BUF_GET_PARAM(bufid,
-				 zb_zcl_device_callback_param_t);
+		ZB_BUF_GET_PARAM(bufid, zb_zcl_device_callback_param_t);
 
 	LOG_INF("%s id %hd", __func__, device_cb_param->device_cb_id);
 
@@ -457,7 +459,9 @@ static void zcl_device_cb(zb_bufid_t bufid)
 		break;
 
 	default:
-		device_cb_param->status = RET_ERROR;
+		if (zcl_scenes_cb(bufid) == ZB_FALSE) {
+			device_cb_param->status = RET_ERROR;
+		}
 		break;
 	}
 
@@ -500,11 +504,16 @@ void error(void)
 void main(void)
 {
 	int blink_status = 0;
+	int err;
 
 	LOG_INF("Starting ZBOSS Light Bulb example");
 
 	/* Initialize */
 	configure_gpio();
+	err = settings_subsys_init();
+	if (err) {
+		LOG_ERR("settings initialization failed");
+	}
 
 	/* Register callback for handling ZCL commands. */
 	ZB_ZCL_REGISTER_DEVICE_CB(zcl_device_cb);
@@ -514,6 +523,15 @@ void main(void)
 
 	bulb_clusters_attr_init();
 	level_control_set_value(dev_ctx.level_control_attr.current_level);
+
+	/* Initialize ZCL scene table */
+	zcl_scenes_init();
+
+	/* Settings should be loaded after zcl_scenes_init */
+	err = settings_load();
+	if (err) {
+		LOG_ERR("settings loading failed");
+	}
 
 	/* Start Zigbee default thread */
 	zigbee_enable();

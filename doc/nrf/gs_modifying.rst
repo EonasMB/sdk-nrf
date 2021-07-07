@@ -21,7 +21,6 @@ You can also configure compiler options, application defines, or include directo
 
 To update the :file:`CMakeLists.txt` file, either edit it directly or use |SES| (SES) to maintain it.
 
-
 Editing CMakeLists.txt directly
 ===============================
 
@@ -37,7 +36,6 @@ Instead of specifying each file (explicitly or with a wildcard), you can include
    target_include_directories(app PRIVATE src)
 
 See the `CMake documentation`_ and :ref:`zephyr:cmake-details` in the Zephyr documentation for more information about how to edit :file:`CMakeLists.txt`.
-
 
 Maintaining CMakeLists.txt in SES
 =================================
@@ -62,8 +60,7 @@ In the window that is displayed, you can define compilation options for the proj
 
 .. note::
    These compilation options apply to the application project only.
-   To manage Zephyr and other subsystems, go to :guilabel:`Project` -> :guilabel:`Configure nRF Connect SDK Project`.
-
+   To manage Zephyr and other subsystems, go to :guilabel:`Project` > :guilabel:`Configure nRF Connect SDK Project`.
 
 SES tags in :file:`CMakeLists.txt`
 ----------------------------------
@@ -100,7 +97,6 @@ The configuration for your application, which might override some default option
 
 For detailed information about configuration options, see :ref:`zephyr:application-kconfig` in the Zephyr documentation.
 
-
 Changing the configuration permanently
 ======================================
 
@@ -116,7 +112,6 @@ This means that after you edit this file, you must re-open your project.
    It is possible to change the default configuration for a library by changing the :file:`Kconfig` file of the library.
    However, best practice is to override the configuration in the application configuration file :file:`prj.conf`.
 
-
 Changing the configuration temporarily
 ======================================
 
@@ -130,7 +125,7 @@ Changes are picked up immediately, and you do not need to re-open the project in
 While it is possible to edit the :file:`.config` file directly, you should use SES or a tool like menuconfig or guiconfig to update it.
 These tools present all available options and allow you to select the ones that you need.
 
-To edit the file in SES, select :guilabel:`Project` -> :guilabel:`Configure nRF Connect SDK Project`.
+To edit the file in SES, select :guilabel:`Project` > :guilabel:`Configure nRF Connect SDK Project`.
 If your application contains more than one image (see :ref:`ug_multi_image`), you must select the correct target.
 To configure the parent image (the main application), select :guilabel:`menuconfig`.
 The other options allow you to configure the child images.
@@ -204,6 +199,9 @@ To create custom build type files for your application instead of using a single
 
 You can now select build types in SES or from command line.
 
+.. note::
+    For an example of an application that is using build types, see the :ref:`nrf_desktop` application (:ref:`nrf_desktop_requirements_build_types`), the :ref:`nrf_machine_learning_app` application (:ref:`nrf_machine_learning_app_requirements_build_types`), or the :ref:`pelion_client` application (:ref:`pelion_client_reqs_build_types`).
+
 Selecting a build type in SES
 =============================
 
@@ -220,7 +218,7 @@ To select the build type in SEGGER Embedded Studio:
 
 
 .. note::
-   You can also specify the build type in the :guilabel:`Additional CMake Options` field in :guilabel:`Tools` -> :guilabel:`Options` -> :guilabel:`nRF Connect`.
+   You can also specify the build type in the :guilabel:`Additional CMake Options` field in :guilabel:`Tools` > :guilabel:`Options` > :guilabel:`nRF Connect`.
    However, the changes will only be applied after re-opening the project.
    Reloading the project is not sufficient.
 
@@ -243,8 +241,8 @@ For example, you can replace the *selected_build_type* variable to build the ``Z
 .. parsed-literal::
    :class: highlight
 
-   west build -b nrf52840_pca20041 -d build_pca20041 -- -DCMAKE_BUILD_TYPE=ZRelease
+   west build -b nrf52840dk_nrf52840 -d build_nrf52840dk_nrf52840 -- -DCMAKE_BUILD_TYPE=ZRelease
 
-The ``build_pca20041`` parameter specifies the output directory for the build files.
+The ``build_nrf52840dk_nrf52840`` parameter specifies the output directory for the build files.
 
 .. build_types_selection_cmd_end

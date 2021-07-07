@@ -11,20 +11,22 @@
 #include <stdlib.h>
 #include "model_utils.h"
 
+#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_MESH_DEBUG_MODEL)
+#define LOG_MODULE_NAME bt_mesh_gen_ponoff_srv
+#include "common/log.h"
+
 /** Persistent storage handling */
 struct ponoff_settings_data {
 	uint8_t on_power_up;
 	bool on_off;
 } __packed;
 
-static int store(struct bt_mesh_ponoff_srv *srv,
-		 const struct bt_mesh_onoff_status *onoff_status)
+#if CONFIG_BT_SETTINGS
+static int store_data(struct bt_mesh_ponoff_srv *srv,
+		      const struct bt_mesh_onoff_status *onoff_status)
 {
-	if (!IS_ENABLED(CONFIG_BT_SETTINGS)) {
-		return 0;
-	}
-
 	struct ponoff_settings_data data;
+	ssize_t size;
 
 	data.on_power_up = (uint8_t)srv->on_power_up;
 
@@ -44,8 +46,51 @@ static int store(struct bt_mesh_ponoff_srv *srv,
 		return -EINVAL;
 	}
 
+	/* Models that extend Generic Power OnOff Server and, which states are
+	 * bound with Generic OnOff state, store the value of the bound state
+	 * separately, therefore they don't need to store Generic OnOff state.
+	 */
+	if (bt_mesh_model_is_extended(srv->ponoff_model)) {
+		size = sizeof(data.on_power_up);
+	} else {
+		size = sizeof(data);
+	}
+
 	return bt_mesh_model_data_store(srv->ponoff_model, false, NULL, &data,
-					sizeof(data));
+					size);
+
+}
+
+static void store_timeout(struct k_work *work)
+{
+	int err;
+
+	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+	struct bt_mesh_ponoff_srv *srv = CONTAINER_OF(
+		dwork, struct bt_mesh_ponoff_srv, store_timer);
+
+	struct bt_mesh_onoff_status onoff_status = {0};
+
+	if (!bt_mesh_model_is_extended(srv->ponoff_model)) {
+		srv->onoff.handlers->get(&srv->onoff, NULL, &onoff_status);
+	}
+
+	err = store_data(srv, &onoff_status);
+
+	if (err) {
+		BT_ERR("Failed storing data: %d", err);
+	}
+}
+#endif
+
+static void store_state(struct bt_mesh_ponoff_srv *srv)
+{
+#if CONFIG_BT_SETTINGS
+	k_work_schedule(
+		&srv->store_timer,
+		K_SECONDS(CONFIG_BT_MESH_MODEL_SRV_STORE_TIMEOUT));
+
+#endif
 }
 
 static void send_rsp(struct bt_mesh_ponoff_srv *srv,
@@ -88,11 +133,7 @@ static void set_on_power_up(struct bt_mesh_ponoff_srv *srv,
 		srv->update(srv, ctx, old, new);
 	}
 
-	struct bt_mesh_onoff_status onoff_status = { 0 };
-
-	srv->onoff.handlers->get(&srv->onoff, NULL, &onoff_status);
-
-	store(srv, &onoff_status);
+	store_state(srv);
 }
 
 static void handle_set_msg(struct bt_mesh_model *model,
@@ -143,8 +184,9 @@ static void onoff_intercept_set(struct bt_mesh_onoff_srv *onoff_srv,
 
 	srv->onoff_handlers->set(onoff_srv, ctx, set, status);
 
-	if (srv->on_power_up == BT_MESH_ON_POWER_UP_RESTORE) {
-		store(srv, status);
+	if ((srv->on_power_up == BT_MESH_ON_POWER_UP_RESTORE) &&
+	    !bt_mesh_model_is_extended(srv->ponoff_model)) {
+		store_state(srv);
 	}
 }
 
@@ -164,15 +206,66 @@ const struct bt_mesh_model_op _bt_mesh_ponoff_srv_op[] = {
 };
 
 const struct bt_mesh_model_op _bt_mesh_ponoff_setup_srv_op[] = {
-	{ BT_MESH_PONOFF_OP_SET, BT_MESH_PONOFF_MSG_LEN_SET, handle_set },
-	{ BT_MESH_PONOFF_OP_SET_UNACK, BT_MESH_PONOFF_MSG_LEN_SET,
-	  handle_set_unack },
+	{
+		BT_MESH_PONOFF_OP_SET,
+		BT_MESH_PONOFF_MSG_LEN_SET,
+		handle_set,
+	},
+	{
+		BT_MESH_PONOFF_OP_SET_UNACK,
+		BT_MESH_PONOFF_MSG_LEN_SET,
+		handle_set_unack,
+	},
 	BT_MESH_MODEL_OP_END,
 };
 
 const struct bt_mesh_onoff_srv_handlers _bt_mesh_ponoff_onoff_intercept = {
 	.set = onoff_intercept_set,
 	.get = onoff_intercept_get,
+};
+
+static ssize_t scene_store(struct bt_mesh_model *model, uint8_t data[])
+{
+	struct bt_mesh_ponoff_srv *srv = model->user_data;
+	struct bt_mesh_onoff_status status = { 0 };
+
+	/* Only store the next stable on_off state: */
+	srv->onoff_handlers->get(&srv->onoff, NULL, &status);
+	data[0] = status.remaining_time ? status.target_on_off :
+					  status.present_on_off;
+
+	return 1;
+}
+
+static void scene_recall(struct bt_mesh_model *model, const uint8_t data[],
+			 size_t len, struct bt_mesh_model_transition *transition)
+{
+	struct bt_mesh_ponoff_srv *srv = model->user_data;
+	struct bt_mesh_onoff_status status = { 0 };
+	struct bt_mesh_onoff_set set = {
+		.on_off = data[0],
+		.transition = transition,
+	};
+
+	srv->onoff_handlers->set(&srv->onoff, NULL, &set, &status);
+}
+
+static void scene_recall_complete(struct bt_mesh_model *model)
+{
+	struct bt_mesh_ponoff_srv *srv = model->user_data;
+	struct bt_mesh_onoff_status status = { 0 };
+
+	srv->onoff_handlers->get(&srv->onoff, NULL, &status);
+
+	(void)bt_mesh_onoff_srv_pub(&srv->onoff, NULL, &status);
+}
+
+BT_MESH_SCENE_ENTRY_SIG(ponoff) = {
+	.id.sig = BT_MESH_MODEL_ID_GEN_POWER_ONOFF_SRV,
+	.maxlen = 1,
+	.store = scene_store,
+	.recall = scene_recall,
+	.recall_complete = scene_recall_complete,
 };
 
 static int update_handler(struct bt_mesh_model *model)
@@ -185,7 +278,6 @@ static int update_handler(struct bt_mesh_model *model)
 	return 0;
 }
 
-
 static int bt_mesh_ponoff_srv_init(struct bt_mesh_model *model)
 {
 	struct bt_mesh_ponoff_srv *srv = model->user_data;
@@ -196,24 +288,26 @@ static int bt_mesh_ponoff_srv_init(struct bt_mesh_model *model)
 	net_buf_simple_init_with_data(&srv->pub_buf, srv->pub_data,
 				      sizeof(srv->pub_data));
 
-	if (IS_ENABLED(CONFIG_BT_MESH_MODEL_EXTENSIONS)) {
-		/* Model extensions:
-		 * To simplify the model extension tree, we're flipping the
-		 * relationship between the ponoff server and the ponoff setup
-		 * server. In the specification, the ponoff setup server extends
-		 * the ponoff server, which is the opposite of what we're doing
-		 * here. This makes no difference for the mesh stack, but it
-		 * makes it a lot easier to extend this model, as we won't have
-		 * to support multiple extenders.
-		 */
-		bt_mesh_model_extend(model, srv->onoff.model);
-		bt_mesh_model_extend(model, srv->dtt.model);
-		bt_mesh_model_extend(
-			model,
-			bt_mesh_model_find(
-				bt_mesh_model_elem(model),
-				BT_MESH_MODEL_ID_GEN_POWER_ONOFF_SETUP_SRV));
-	}
+#if CONFIG_BT_SETTINGS
+	k_work_init_delayable(&srv->store_timer, store_timeout);
+#endif
+
+	/* Model extensions:
+	 * To simplify the model extension tree, we're flipping the
+	 * relationship between the ponoff server and the ponoff setup
+	 * server. In the specification, the ponoff setup server extends
+	 * the ponoff server, which is the opposite of what we're doing
+	 * here. This makes no difference for the mesh stack, but it
+	 * makes it a lot easier to extend this model, as we won't have
+	 * to support multiple extenders.
+	 */
+	bt_mesh_model_extend(model, srv->onoff.model);
+	bt_mesh_model_extend(model, srv->dtt.model);
+	bt_mesh_model_extend(
+		model,
+		bt_mesh_model_find(
+			bt_mesh_model_elem(model),
+			BT_MESH_MODEL_ID_GEN_POWER_ONOFF_SETUP_SRV));
 
 	return 0;
 }
@@ -240,18 +334,27 @@ static int bt_mesh_ponoff_srv_settings_set(struct bt_mesh_model *model,
 	struct bt_mesh_ponoff_srv *srv = model->user_data;
 	struct bt_mesh_onoff_status dummy;
 	struct ponoff_settings_data data;
+	ssize_t size = MIN(len_rd, sizeof(data));
 
 	if (name) {
 		return -ENOENT;
 	}
 
-	if (read_cb(cb_arg, &data, sizeof(data)) != sizeof(data)) {
+	if (read_cb(cb_arg, &data, size) != size) {
 		return -EINVAL;
 	}
 
 	set_on_power_up(srv, NULL, (enum bt_mesh_on_power_up)data.on_power_up);
 
-	struct bt_mesh_onoff_set onoff_set = { 0 };
+	/* Models that extend Generic Power OnOff Server and, which states are
+	 * bound with Generic OnOff state, store the value of the bound state
+	 * separately, therefore they don't need to set Generic OnOff state.
+	 */
+	if (bt_mesh_model_is_extended(model)) {
+		return 0;
+	}
+
+	struct bt_mesh_onoff_set onoff_set = { .transition = NULL };
 
 	switch (data.on_power_up) {
 	case BT_MESH_ON_POWER_UP_OFF:

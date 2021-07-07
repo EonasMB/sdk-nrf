@@ -10,7 +10,7 @@
 #include "event_manager.h"
 
 #define MODULE settings_loader
-#include "module_state_event.h"
+#include <caf/events/module_state_event.h>
 
 #include <logging/log.h>
 LOG_MODULE_REGISTER(MODULE, CONFIG_DESKTOP_SETTINGS_LOADER_LOG_LEVEL);
@@ -74,7 +74,7 @@ static bool module_event_handler(const struct module_state_event *event)
 #if CONFIG_DESKTOP_BAS_ENABLE
 		MODULE_ID(bas),
 #endif
-#if CONFIG_DESKTOP_BLE_ADVERTISING_ENABLE
+#if CONFIG_CAF_BLE_ADV
 		MODULE_ID(ble_adv),
 #endif
 #if CONFIG_DESKTOP_MOTION_SENSOR_ENABLE

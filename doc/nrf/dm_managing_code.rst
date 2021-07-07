@@ -36,6 +36,8 @@ Replace ``{revision}`` with any revision you wish to obtain.
 This can be ``master`` if you want the latest state, or any released version (e.g. |release_tt|).
 If you omit the ``--mr`` parameter, west defaults to ``master``.
 
+This is the procedure used for :ref:`getting the nRF Connect SDK code <cloning_the_repositories>` when :ref:`gs_installing`.
+
 .. _dm-wf-update-ncs:
 
 Updating a copy of the |NCS|
@@ -55,7 +57,8 @@ Where ``{remote}`` is the Git remote that points to the official Nordic reposito
 This is called ``origin`` by default for the `sdk-nrf`_ repository and ``ncs`` for most others, but :ref:`may have another name <dm-wf-fork>`.
 You can use ``git remote -v`` to list all your remotes.
 
-Note that using ``git checkout`` is one of multiple ways of achieving this.
+This is the procedure used for :ref:`gs_updating_repos` after :ref:`gs_installing`.
+However, using ``git checkout`` is one of multiple ways of achieving this.
 Git offers several commands and mechanisms to set the current working copy of a repository to a particular revision.
 Depending on how you manage the branches of your local clone of the `sdk-nrf`_ repository, you can also replace the use of ``git checkout`` with, among many others::
 
@@ -74,10 +77,10 @@ Refer to the publicly available `Git`_ documentation.
 Forking a repository of the |NCS|
 *********************************
 
-In some cases, you might want to keep a :ref:`soft fork <dm-glossary>` of one or more repositories that are part of the |NCS|.
+In some cases, you might want to keep a :term:`Soft fork` of one or more repositories that are part of the |NCS|.
 The procedure to achieve that is the same regardless of whether you fork the manifest repository and/or one or more project repositories.
 
-There are two similar but slightly different meanings to the term "fork", as described in the :ref:`dm-glossary`:
+There are two similar but slightly different meanings to the term "fork", as described in the :ref:`glossary`:
 
 * A fork in general terms is a server-hosted copy of an upstream repository with a few downstream changes on top of it.
   It can be hosted on GitHub or elsewhere.

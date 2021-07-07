@@ -31,6 +31,8 @@ extern "C" {
 
 #define NRF_CLOUD_SETTINGS_NAME "nrf_cloud"
 
+#define NRF_CLOUD_CLIENT_ID_MAX_LEN 64
+
 /** @brief Asynchronous nRF Cloud events notified by the module. */
 enum nrf_cloud_evt_type {
 	/** The transport to the nRF Cloud is established. */
@@ -120,6 +122,20 @@ enum nrf_cloud_topic_type {
 	NRF_CLOUD_TOPIC_MESSAGE,
 };
 
+/**@brief FOTA update type. */
+enum nrf_cloud_fota_type {
+	NRF_CLOUD_FOTA_TYPE__FIRST = 0,
+
+	/** Application update. */
+	NRF_CLOUD_FOTA_APPLICATION = NRF_CLOUD_FOTA_TYPE__FIRST,
+	/** Modem update. */
+	NRF_CLOUD_FOTA_MODEM = 1,
+	/** Bootloader update. */
+	NRF_CLOUD_FOTA_BOOTLOADER = 2,
+
+	NRF_CLOUD_FOTA_TYPE__INVALID
+};
+
 /**@brief Generic encapsulation for any data that is sent to the cloud. */
 struct nrf_cloud_data {
 	/** Length of the data. */
@@ -202,6 +218,12 @@ typedef void (*nrf_cloud_event_handler_t)(const struct nrf_cloud_evt *evt);
 struct nrf_cloud_init_param {
 	/** Event handler that is registered with the module. */
 	nrf_cloud_event_handler_t event_handler;
+	/** NULL-terminated MQTT client ID string.
+	 * Must not exceed NRF_CLOUD_CLIENT_ID_MAX_LEN.
+	 * Must be set if NRF_CLOUD_CLIENT_ID_SRC_RUNTIME
+	 * is enabled; otherwise, NULL.
+	 */
+	char *client_id;
 };
 
 /**
@@ -315,6 +337,18 @@ int nrf_cloud_disconnect(void);
  * functional.
  */
 void nrf_cloud_process(void);
+
+/**
+ * @brief The application has handled re-init after a modem FOTA update and the
+ *        LTE link has been re-established.
+ *        This function must be called in order to complete the modem update.
+ *
+ * @param[in] fota_success true if modem update was successful, false otherwise.
+ *
+ * @retval 0 If successful.
+ *           Otherwise, a (negative) error code is returned.
+ */
+int nrf_cloud_modem_fota_completed(const bool fota_success);
 
 /** @} */
 

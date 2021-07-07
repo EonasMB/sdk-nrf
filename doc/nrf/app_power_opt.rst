@@ -46,6 +46,10 @@ To reduce current consumption, disable serial logging.
 To disable serial output, you must change the project configuration associated with the sample or application.
 |config|
 
+.. note::
+    If the application consists of multiple images, like applications built for the nRF53 Series, logging must be disabled on both images.
+    See :ref:`ug_nrf5340` and :ref:`ug_multi_image`.
+
 1. Set the project configuration ``CONFIG_SERIAL`` to ``n`` irrespective of whether you are building the sample for the secure or non-secure build targets.
 #. For the non-secure build target (``nrf9160dk_nrf9160ns``), ensure that serial logging is also disabled in :ref:`secure_partition_manager`. To disable serial logging in Secure Partition Manager, complete the following steps:
 
@@ -166,7 +170,7 @@ To simulate the use case with Online Power Profiler, complete the following step
 #. Export the settings from the Online Power Profiler tool and compare them with the measurements in real networks. Complete the following sub-steps to export the settings from Online Power Profiler:
 
    a. Click :guilabel:`Export settings` to store current Online Power Profiler settings to a :file:`.json` file.
-   #. Click :guilabel:`Export NCS project config` to export the configuration parameters in a :file:`opp.conf` file that you can use when building the firmware.
+   #. Click :guilabel:`Export project config` to export the configuration parameters in a :file:`opp.conf` file that you can use when building the firmware.
 
 Real-time power measurement using Power Profiler Kit II
 -------------------------------------------------------

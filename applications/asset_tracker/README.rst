@@ -175,10 +175,31 @@ To enable the LwM2M carrier library, add the following parameter to your build c
 
 ``-DOVERLAY_CONFIG=lwm2m_carrier_overlay.conf``
 
-In |SES|, select :guilabel:`Tools` -> :guilabel:`Options` -> :guilabel:`nRF Connect` to add the above CMake parameter.
+In |SES|, select :guilabel:`Tools` > :guilabel:`Options` > :guilabel:`nRF Connect` to add the above CMake parameter.
 See :ref:`cmake_options` for more information.
 
 Alternatively, you can manually set the configuration options to match the contents of the overlay config file.
+
+Using nRF Cloud A-GPS or P-GPS
+******************************
+By default, this application enables :ref:`lib_nrf_cloud_agps` (Assisted GPS) support.
+Each time the GPS unit attempts to get a location fix, it may require additional information from  `nRF Connect for Cloud`_ to speed up the time to get that fix.
+
+Alternatively, :ref:`lib_nrf_cloud_pgps` (Predicted GPS) downloads and stores assistance predictions in Flash for one or two weeks, and does not require the cloud to help with each fix.
+
+In order to use P-GPS instead of A-GPS, you can add the following parameter to your build command:
+``-DOVERLAY_CONFIG=overlay-pgps.conf``
+
+In order to use A-GPS and P-GPS at the same time, use the following instead:
+``-DOVERLAY_CONFIG=overlay-agps-pgps.conf``
+
+Using nRF Cloud FOTA
+********************
+
+You can add the nRF Cloud FOTA update functionality to the application through the :ref:`lib_nrf_cloud` library.
+The FOTA functionality is automatically enabled when you include the nRF Cloud library.
+For more information, see :ref:`lib_nrf_cloud_fota`.
+
 
 Building and running
 ********************
@@ -189,7 +210,7 @@ Building and running
 
 The Kconfig file of the application contains options to configure the application.
 For example, configure ``CONFIG_POWER_OPTIMIZATION_ENABLE`` to enable power optimization or ``CONFIG_TEMP_USE_EXTERNAL`` to use an external temperature sensor instead of simulated temperature data.
-In |SES|, select :guilabel:`Project` -> :guilabel:`Configure nRF Connect SDK project` to browse and configure these options.
+In |SES|, select :guilabel:`Project` > :guilabel:`Configure nRF Connect SDK project` to browse and configure these options.
 Alternatively, use the command line tool ``menuconfig`` or configure the options directly in :file:`prj.conf`.
 
 .. external_antenna_note_start
@@ -207,7 +228,22 @@ Using RSA signing for MCUboot
 
 When :option:`CONFIG_BOOTLOADER_MCUBOOT` is set to ``y``, the Asset Tracker application adds an overlay configuration for MCUboot.
 This configuration enables the RSA signing of the images for backward compatibility with the MCUboot versions that precede the |NCS| v1.4.0.
-The overlay can be found in :file:`mcuboot_overlay-rsa.conf`.
+The overlay can be found in :file:`child_image/mcuboot.conf`.
+
+Using nRF Cloud A-GPS or P-GPS
+==============================
+
+By default, this application enables :ref:`lib_nrf_cloud_agps` (Assisted GPS) support.
+Each time the GPS unit attempts to get a location fix, it might require additional information from  `nRF Cloud`_ to speed up the time to get the fix.
+
+Alternatively, :ref:`lib_nrf_cloud_pgps` (Predicted GPS) downloads and stores assistance predictions in flash for one or two weeks, and does not require cloud support for each fix.
+
+To use P-GPS instead of A-GPS, add the following parameter to your build command:
+``-DOVERLAY_CONFIG=overlay-pgps.conf``
+
+To use A-GPS and P-GPS simultaneously, use the following parameter:
+``-DOVERLAY_CONFIG=overlay-agps-pgps.conf``
+
 
 Testing
 =======
@@ -259,7 +295,7 @@ This application uses the following |NCS| libraries and drivers:
 * :ref:`lte_lc_readme`
 * |NCS| modules abstracted via the LwM2M carrier OS abstraction layer (:file:`lwm2m_os.h`)
 
-.. include:: /../../lib/bin/lwm2m_carrier/doc/app_integration.rst
+.. include:: /lib/bin/lwm2m_carrier/doc/app_integration.rst
   :start-after: lwm2m_osal_mod_list_start
   :end-before: lwm2m_osal_mod_list_end
 

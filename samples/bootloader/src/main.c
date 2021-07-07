@@ -13,6 +13,28 @@
 #include <bl_boot.h>
 #include <bl_validation.h>
 
+#if defined(CONFIG_HW_UNIQUE_KEY)
+#include <init.h>
+#include <hw_unique_key.h>
+
+int load_huk(const struct device *unused)
+{
+	(void)unused;
+
+	if (!hw_unique_key_is_written(HUK_KEYSLOT_KDR)) {
+		printk("Error: Hardware Unique Key not present.\n");
+		k_panic();
+		return -1;
+	}
+
+	hw_unique_key_load_kdr();
+
+	return 0;
+}
+
+SYS_INIT(load_huk, PRE_KERNEL_2, 0);
+#endif
+
 
 static void validate_and_boot(const struct fw_info *fw_info, uint16_t slot)
 {

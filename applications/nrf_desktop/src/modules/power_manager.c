@@ -5,7 +5,7 @@
  */
 
 #include <zephyr/types.h>
-#include <power/power.h>
+#include <pm/pm.h>
 
 #include <device.h>
 #include <drivers/gpio.h>
@@ -13,13 +13,13 @@
 
 #include <profiler.h>
 
-#include "power_event.h"
-#include "ble_event.h"
+#include <caf/events/power_event.h>
+#include <caf/events/ble_common_event.h>
 #include "usb_event.h"
 #include "hid_event.h"
 
 #define MODULE power_manager
-#include "module_state_event.h"
+#include <caf/events/module_state_event.h>
 
 #include <logging/log_ctrl.h>
 #include <logging/log.h>
@@ -45,8 +45,8 @@ enum power_state {
 
 
 static enum power_state power_state = POWER_STATE_IDLE;
-static struct k_delayed_work power_down_trigger;
-static struct k_delayed_work error_trigger;
+static struct k_work_delayable power_down_trigger;
+static struct k_work_delayable error_trigger;
 static atomic_t power_down_count;
 static unsigned int connection_count;
 static enum usb_state usb_state;
@@ -77,7 +77,7 @@ static void system_off(void)
 	LOG_WRN("System turned off");
 	LOG_PANIC();
 
-	pm_power_state_force(POWER_STATE_DEEP_SLEEP_1);
+	pm_power_state_force((struct pm_state_info){PM_STATE_SOFT_OFF, 0, 0});
 }
 
 static void power_down(struct k_work *work)
@@ -101,7 +101,7 @@ static void power_down(struct k_work *work)
 			/* Stay suspended. */
 		}
 	} else {
-		k_delayed_work_submit(&power_down_trigger,
+		k_work_reschedule(&power_down_trigger,
 				      K_MSEC(POWER_DOWN_CHECK_MS));
 	}
 }
@@ -124,14 +124,9 @@ static void power_down_counter_reset(void)
 	}
 }
 
-enum power_states pm_policy_next_state(int32_t ticks)
+struct pm_state_info pm_policy_next_state(int32_t ticks)
 {
-	return POWER_STATE_ACTIVE;
-}
-
-bool pm_policy_low_power_devices(enum power_states pm_state)
-{
-	return pm_is_sleep_state(pm_state);
+	return (struct pm_state_info){PM_STATE_ACTIVE, 0, 0};
 }
 
 static void error(struct k_work *work)
@@ -155,7 +150,7 @@ static bool event_handler(const struct event_header *eh)
 
 	if (is_power_down_event(eh)) {
 		if (power_state == POWER_STATE_ERROR) {
-			k_delayed_work_submit(&error_trigger,
+			k_work_reschedule(&error_trigger,
 					      POWER_DOWN_ERROR_TIMEOUT);
 			return false;
 		} else if (power_state == POWER_STATE_ERROR_SUSPENDED) {
@@ -204,7 +199,7 @@ static bool event_handler(const struct event_header *eh)
 		power_state = POWER_STATE_IDLE;
 		if (!is_device_powered()) {
 			power_down_counter_reset();
-			k_delayed_work_submit(&power_down_trigger,
+			k_work_reschedule(&power_down_trigger,
 					      K_MSEC(POWER_DOWN_CHECK_MS));
 		}
 
@@ -262,7 +257,8 @@ static bool event_handler(const struct event_header *eh)
 		switch (event->state) {
 		case USB_STATE_POWERED:
 		case USB_STATE_ACTIVE:
-			k_delayed_work_cancel(&power_down_trigger);
+			/* Cancel cannot fail if executed from another work's context. */
+			(void)k_work_cancel_delayable(&power_down_trigger);
 			if (power_state != POWER_STATE_IDLE) {
 				struct wake_up_event *wue =
 					new_wake_up_event();
@@ -275,7 +271,7 @@ static bool event_handler(const struct event_header *eh)
 			 * Don't turn the system off directly but start
 			 * power down counter instead. */
 			power_down_counter_reset();
-			k_delayed_work_submit(&power_down_trigger,
+			k_work_reschedule(&power_down_trigger,
 					      K_MSEC(POWER_DOWN_CHECK_MS));
 			break;
 
@@ -283,7 +279,7 @@ static bool event_handler(const struct event_header *eh)
 			if (IS_ENABLED(CONFIG_USB_DEVICE_REMOTE_WAKEUP)) {
 				/* Trigger immediate power down to standby. */
 				atomic_set(&power_down_count, POWER_DOWN_TIMEOUT_MS);
-				k_delayed_work_submit(&power_down_trigger,
+				k_work_reschedule(&power_down_trigger,
 						      K_MSEC(POWER_DOWN_CHECK_MS));
 			}
 			break;
@@ -324,15 +320,17 @@ static bool event_handler(const struct event_header *eh)
 
 			LOG_INF("Activate power manager");
 
-			pm_power_state_force(POWER_STATE_ACTIVE);
+			pm_power_state_force(
+				(struct pm_state_info){PM_STATE_ACTIVE, 0, 0});
 
-			k_delayed_work_init(&error_trigger, error);
-			k_delayed_work_init(&power_down_trigger, power_down);
-			k_delayed_work_submit(&power_down_trigger,
+			k_work_init_delayable(&error_trigger, error);
+			k_work_init_delayable(&power_down_trigger, power_down);
+			k_work_reschedule(&power_down_trigger,
 					      K_MSEC(POWER_DOWN_CHECK_MS));
 		} else if (event->state == MODULE_STATE_ERROR) {
 			power_state = POWER_STATE_ERROR;
-			k_delayed_work_cancel(&power_down_trigger);
+			/* Cancel cannot fail if executed from another work's context. */
+			(void)k_work_cancel_delayable(&power_down_trigger);
 
 			struct power_down_event *event = new_power_down_event();
 

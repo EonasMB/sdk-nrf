@@ -90,19 +90,13 @@ static int write_at_cmd_with_cme_enabled(char *cmd, char *buf, size_t buf_len,
 	}
 
 	if (!cmee_was_active) {
-		err = cmee_enable();
-		if (err) {
-			return err;
-		}
+		cmee_enable();
 	}
 
 	err = at_cmd_write(cmd, buf, buf_len, state);
 
 	if (!cmee_was_active) {
-		err = cmee_disable();
-		if (err) {
-			return err;
-		}
+		cmee_disable();
 	}
 
 	return err;
@@ -146,21 +140,13 @@ int modem_key_mgmt_write(nrf_sec_tag_t sec_tag,
 		return -EINVAL;
 	}
 
-	written = snprintf(scratch_buf, sizeof(scratch_buf), "%s,%d,%d,\"",
-			   MODEM_KEY_MGMT_OP_WR, sec_tag, cred_type);
+	written = snprintf(scratch_buf, sizeof(scratch_buf),
+			   "%s,%d,%d,\"%.*s\"", MODEM_KEY_MGMT_OP_WR, sec_tag,
+			   cred_type, len, (const char *)buf);
 
 	if (written < 0 || written >= sizeof(scratch_buf)) {
 		return -ENOBUFS;
 	}
-
-	if (written + len + sizeof("\"") > sizeof(scratch_buf)) {
-		return -ENOBUFS;
-	}
-
-	memcpy(&scratch_buf[written], buf, len);
-	written += len;
-
-	memcpy(&scratch_buf[written], "\"", sizeof("\""));
 
 	err = write_at_cmd_with_cme_enabled(scratch_buf, NULL, 0, &state);
 

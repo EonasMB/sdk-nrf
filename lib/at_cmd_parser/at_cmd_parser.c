@@ -95,9 +95,13 @@ static int at_parse_detect_type(const char **str, int index)
 
 	} else if (set_type_string) {
 		set_new_state(STRING);
-	} else if ((index == 0) && is_clac(tmpstr)) {
-		/* Next, check if we deal with CLAC response (eg AT+, AT%) */
+	} else if ((index > 0) && is_clac(tmpstr)) {
+		/* Next, check if we deal with CLAC response (eg AT+, AT%)
+		 * NOTE - need to go back to index 0 and parse as CLAC state
+		 * NOTE - AT+CLAC always returns more than one line
+		 */
 		set_new_state(CLAC);
+		return -2;
 	} else if ((index == 0) && is_command(tmpstr)) {
 		/* Next, check if we deal with command (eg AT+CCLK) */
 		set_new_state(COMMAND);
@@ -176,7 +180,7 @@ static int at_parse_process_element(const char **str, int index,
 
 		skip_command_prefix(&tmpstr);
 
-		while (is_valid_notification_char(*tmpstr)) {
+		while (is_valid_command_char(*tmpstr)) {
 			tmpstr++;
 		}
 
@@ -249,16 +253,11 @@ static int at_parse_process_element(const char **str, int index,
 		tmpstr++;
 	} else if (state == NUMBER) {
 		char *next;
-		int32_t value = (int32_t)strtol(tmpstr, &next, 10);
+		int64_t value = (int64_t)strtoll(tmpstr, &next, 10);
 
 		tmpstr = next;
 
-		if ((value <= SHRT_MAX) && (value >= SHRT_MIN)) {
-			at_params_short_put(list, index, (int16_t)value);
-		} else {
-			at_params_int_put(list, index, value);
-		}
-
+		at_params_int_put(list, index, value);
 	} else if (state == SMS_PDU) {
 		const char *start_ptr = tmpstr;
 
@@ -294,6 +293,7 @@ static int at_parse_param(const char **at_params_str,
 	int index = 0;
 	const char *str = *at_params_str;
 	bool oversized = false;
+	int ret;
 
 	reset_state();
 
@@ -302,8 +302,14 @@ static int at_parse_param(const char **at_params_str,
 			str++;
 		}
 
-		if (at_parse_detect_type(&str, index) == -1) {
+		ret = at_parse_detect_type(&str, index);
+		if (ret == -1) {
 			break;
+		}
+		if (ret == -2) {
+			/* CLAC response */
+			str = *at_params_str;
+			index = 0;
 		}
 
 		if (at_parse_process_element(&str, index, list) == -1) {

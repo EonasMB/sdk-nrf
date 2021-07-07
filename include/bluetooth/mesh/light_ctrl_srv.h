@@ -115,7 +115,7 @@ struct bt_mesh_light_ctrl_srv_reg_cfg {
 /** Illumination regulator */
 struct bt_mesh_light_ctrl_srv_reg {
 	/** Regulator step timer */
-	struct k_delayed_work timer;
+	struct k_work_delayable timer;
 	/** Internal integral sum. */
 	float i;
 	/** Previous output */
@@ -145,14 +145,14 @@ struct bt_mesh_light_ctrl_srv {
 	/** Present ambient illumination */
 	struct sensor_value ambient_lux;
 	/** State timer */
-	struct k_delayed_work timer;
+	struct k_work_delayable timer;
 
 #if CONFIG_BT_SETTINGS
 	/** Storage timer */
-	struct k_delayed_work store_timer;
+	struct k_work_delayable store_timer;
 #endif
 	/** Timer for delayed action */
-	struct k_delayed_work action_delay;
+	struct k_work_delayable action_delay;
 	/** Configuration parameters */
 	struct bt_mesh_light_ctrl_srv_cfg cfg;
 	/** Publish parameters */
@@ -186,8 +186,6 @@ struct bt_mesh_light_ctrl_srv {
 	struct bt_mesh_model *model;
 	/** Composition data setup server model instance */
 	struct bt_mesh_model *setup_srv;
-	/** Scene entry */
-	struct bt_mesh_scene_entry scene;
 };
 
 /** @brief Turn the light on.

@@ -20,27 +20,6 @@
 extern "C" {
 #endif
 
-/** @cond INTERNAL_HIDDEN */
-#define BT_MESH_LVL_OP_GET BT_MESH_MODEL_OP_2(0x82, 0x05)
-#define BT_MESH_LVL_OP_SET BT_MESH_MODEL_OP_2(0x82, 0x06)
-#define BT_MESH_LVL_OP_SET_UNACK BT_MESH_MODEL_OP_2(0x82, 0x07)
-#define BT_MESH_LVL_OP_STATUS BT_MESH_MODEL_OP_2(0x82, 0x08)
-#define BT_MESH_LVL_OP_DELTA_SET BT_MESH_MODEL_OP_2(0x82, 0x09)
-#define BT_MESH_LVL_OP_DELTA_SET_UNACK BT_MESH_MODEL_OP_2(0x82, 0x0A)
-#define BT_MESH_LVL_OP_MOVE_SET BT_MESH_MODEL_OP_2(0x82, 0x0B)
-#define BT_MESH_LVL_OP_MOVE_SET_UNACK BT_MESH_MODEL_OP_2(0x82, 0x0C)
-
-#define BT_MESH_LVL_MSG_LEN_GET 0
-#define BT_MESH_LVL_MSG_MINLEN_SET 3
-#define BT_MESH_LVL_MSG_MAXLEN_SET 5
-#define BT_MESH_LVL_MSG_MINLEN_STATUS 2
-#define BT_MESH_LVL_MSG_MAXLEN_STATUS 5
-#define BT_MESH_LVL_MSG_MINLEN_DELTA_SET 5
-#define BT_MESH_LVL_MSG_MAXLEN_DELTA_SET 7
-#define BT_MESH_LVL_MSG_MINLEN_MOVE_SET 3
-#define BT_MESH_LVL_MSG_MAXLEN_MOVE_SET 5
-/** @endcond */
-
 /** Generic Level minimum value. */
 #define BT_MESH_LVL_MIN INT16_MIN
 /** Generic Level maximum value. */
@@ -53,9 +32,11 @@ struct bt_mesh_lvl_set {
 	/** Whether this is a new action. */
 	bool new_transaction;
 	/**
-	 * Transition time parameters for the state change. Setting the
-	 * transition to NULL makes the server use its default transition time
-	 * parameters.
+	 * Transition time parameters for the state change, or NULL.
+	 *
+	 * When sending, setting the transition to NULL makes the receiver use
+	 * its default transition time parameters, or 0 if no default transition
+	 * time is set.
 	 */
 	const struct bt_mesh_model_transition *transition;
 };
@@ -71,9 +52,11 @@ struct bt_mesh_lvl_delta_set {
 	 */
 	bool new_transaction;
 	/**
-	 * Transition time parameters for the state change. Setting the
-	 * transition to NULL makes the server use its default transition time
-	 * parameters.
+	 * Transition time parameters for the state change, or NULL.
+	 *
+	 * When sending, setting the transition to NULL makes the receiver use
+	 * its default transition time parameters, or 0 if no default transition
+	 * time is set.
 	 */
 	const struct bt_mesh_model_transition *transition;
 };
@@ -85,10 +68,13 @@ struct bt_mesh_lvl_move_set {
 	/** Whether this is a new action. */
 	bool new_transaction;
 	/**
-	 * Transition parameters. @c delay indicates time until the move
-	 * should start, @c transition indicates the amount of time each
-	 * @c delta step should take. Setting the transition to NULL makes the
-	 * server use its default transition time parameters.
+	 * Transition parameters, or NULL. @c delay indicates time until the
+	 * move should start, @c time indicates the amount of time each @c delta
+	 * step should take.
+	 *
+	 * When sending, setting the transition to NULL makes the receiver use
+	 * its default transition time parameters, or 0 if no default transition
+	 * time is set.
 	 */
 	const struct bt_mesh_model_transition *transition;
 };
@@ -109,6 +95,27 @@ struct bt_mesh_lvl_status {
 	 */
 	int32_t remaining_time;
 };
+
+/** @cond INTERNAL_HIDDEN */
+#define BT_MESH_LVL_OP_GET BT_MESH_MODEL_OP_2(0x82, 0x05)
+#define BT_MESH_LVL_OP_SET BT_MESH_MODEL_OP_2(0x82, 0x06)
+#define BT_MESH_LVL_OP_SET_UNACK BT_MESH_MODEL_OP_2(0x82, 0x07)
+#define BT_MESH_LVL_OP_STATUS BT_MESH_MODEL_OP_2(0x82, 0x08)
+#define BT_MESH_LVL_OP_DELTA_SET BT_MESH_MODEL_OP_2(0x82, 0x09)
+#define BT_MESH_LVL_OP_DELTA_SET_UNACK BT_MESH_MODEL_OP_2(0x82, 0x0A)
+#define BT_MESH_LVL_OP_MOVE_SET BT_MESH_MODEL_OP_2(0x82, 0x0B)
+#define BT_MESH_LVL_OP_MOVE_SET_UNACK BT_MESH_MODEL_OP_2(0x82, 0x0C)
+
+#define BT_MESH_LVL_MSG_LEN_GET 0
+#define BT_MESH_LVL_MSG_MINLEN_SET 3
+#define BT_MESH_LVL_MSG_MAXLEN_SET 5
+#define BT_MESH_LVL_MSG_MINLEN_STATUS 2
+#define BT_MESH_LVL_MSG_MAXLEN_STATUS 5
+#define BT_MESH_LVL_MSG_MINLEN_DELTA_SET 5
+#define BT_MESH_LVL_MSG_MAXLEN_DELTA_SET 7
+#define BT_MESH_LVL_MSG_MINLEN_MOVE_SET 3
+#define BT_MESH_LVL_MSG_MAXLEN_MOVE_SET 5
+/** @endcond */
 
 #ifdef __cplusplus
 }

@@ -1,6 +1,13 @@
 name: Manifest
+
 on:
-  - pull_request_target
+  pull_request_target:
+    paths:
+      - 'west.yml'
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
   contribs:
@@ -15,7 +22,7 @@ jobs:
           fetch-depth: 0
 
       - name: Manifest
-        uses: zephyrproject-rtos/action-manifest@main
+        uses: zephyrproject-rtos/action-manifest@v1.1.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           manifest-path: 'west.yml'

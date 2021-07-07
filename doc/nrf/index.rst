@@ -10,15 +10,15 @@ The |NCS| includes the Zephyr™ real-time operating system (RTOS), which is bui
 
 .. note::
 
-   nRF53 Series devices are now supported for production.
+   nRF53 Series devices are supported for production.
    Wireless protocol stacks and libraries may indicate support for development or support for production for different series of devices based on verification and certification status.
 
+To access different versions of the |NCS| documentation, use the version drop-down in the top left corner.
+To view the documentation from the different repositories that are part of |NCS|, click the arrow in the bottom left corner and select the desired document set.
+A "99" at the end of the version number of this documentation indicates continuous updates on the master branch since the previous major.minor release.
 
-.. previous note about development and production support
-..   nRF53 Series devices (which are pre-production) and Zigbee and Bluetooth mesh protocols are supported for development in |release| for prototyping and evaluation.
-..   Support for production and deployment in end products is coming soon.
-
-To access different versions of the |NCS| documentation, use the version drop-down in the top-left corner.
+The search functionality only works for the documentation set you are in.
+For example, if you search in the |NCS| documentation set, you will only find documents related to it, not Zephyr documentation.
 
 In addition to the |NCS| documentation, information is available in the following locations:
 
@@ -53,6 +53,7 @@ In addition to the |NCS| documentation, information is available in the followin
 
    introduction
    documentation
+   glossary
    getting_started
    ug_dev_model
    ug_app_dev

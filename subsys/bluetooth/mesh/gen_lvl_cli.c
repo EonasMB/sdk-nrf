@@ -7,7 +7,7 @@
 #include <bluetooth/mesh/gen_lvl_cli.h>
 #include "model_utils.h"
 
-static void handle_status(struct bt_mesh_model *mod,
+static void handle_status(struct bt_mesh_model *model,
 			  struct bt_mesh_msg_ctx *ctx,
 			  struct net_buf_simple *buf)
 {
@@ -16,8 +16,9 @@ static void handle_status(struct bt_mesh_model *mod,
 		return;
 	}
 
-	struct bt_mesh_lvl_cli *cli = mod->user_data;
+	struct bt_mesh_lvl_cli *cli = model->user_data;
 	struct bt_mesh_lvl_status status;
+	struct bt_mesh_lvl_status *rsp;
 
 	status.current = net_buf_simple_pull_le16(buf);
 	if (buf->len == 3) {
@@ -29,12 +30,10 @@ static void handle_status(struct bt_mesh_model *mod,
 		status.remaining_time = 0;
 	}
 
-	if (model_ack_match(&cli->ack_ctx, BT_MESH_LVL_OP_STATUS, ctx)) {
-		struct bt_mesh_lvl_status *rsp =
-			(struct bt_mesh_lvl_status *)cli->ack_ctx.user_data;
-
+	if (bt_mesh_msg_ack_ctx_match(&cli->ack_ctx, BT_MESH_LVL_OP_STATUS, ctx->addr,
+				      (void **)&rsp)) {
 		*rsp = status;
-		model_ack_rx(&cli->ack_ctx);
+		bt_mesh_msg_ack_ctx_rx(&cli->ack_ctx);
 	}
 
 	if (cli->status_handler) {
@@ -47,26 +46,26 @@ const struct bt_mesh_model_op _bt_mesh_lvl_cli_op[] = {
 	BT_MESH_MODEL_OP_END,
 };
 
-static int bt_mesh_lvl_init(struct bt_mesh_model *mod)
+static int bt_mesh_lvl_init(struct bt_mesh_model *model)
 {
-	struct bt_mesh_lvl_cli *cli = mod->user_data;
+	struct bt_mesh_lvl_cli *cli = model->user_data;
 
-	cli->model = mod;
+	cli->model = model;
 	cli->pub.msg = &cli->pub_buf;
 	net_buf_simple_init_with_data(&cli->pub_buf, cli->pub_data,
 				      sizeof(cli->pub_data));
 
-	model_ack_init(&cli->ack_ctx);
+	bt_mesh_msg_ack_ctx_init(&cli->ack_ctx);
 
 	return 0;
 }
 
-static void bt_mesh_lvl_reset(struct bt_mesh_model *mod)
+static void bt_mesh_lvl_reset(struct bt_mesh_model *model)
 {
-	struct bt_mesh_lvl_cli *cli = mod->user_data;
+	struct bt_mesh_lvl_cli *cli = model->user_data;
 
-	net_buf_simple_reset(mod->pub->msg);
-	model_ack_reset(&cli->ack_ctx);
+	net_buf_simple_reset(model->pub->msg);
+	bt_mesh_msg_ack_ctx_reset(&cli->ack_ctx);
 }
 
 const struct bt_mesh_model_cb _bt_mesh_lvl_cli_cb = {

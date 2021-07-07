@@ -9,7 +9,14 @@
 #include <zephyr.h>
 #include <zephyr/types.h>
 #include <toolchain/common.h>
+#if defined(CONFIG_POSIX_API)
+#include <posix/unistd.h>
+#include <posix/netdb.h>
+#include <posix/sys/time.h>
+#include <posix/sys/socket.h>
+#else
 #include <net/socket.h>
+#endif
 #include <net/tls_credentials.h>
 #include <net/download_client.h>
 #include <logging/log.h>
@@ -65,8 +72,11 @@ static int socket_timeout_set(int fd, int type)
 		.tv_usec = (timeout_ms % 1000) * 1000,
 	};
 
+#if defined(CONFIG_POSIX_API)
+	LOG_INF("Configuring socket timeout (%d s)", (int32_t)timeo.tv_sec);
+#else
 	LOG_INF("Configuring socket timeout (%ld s)", timeo.tv_sec);
-
+#endif
 	err = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeo, sizeof(timeo));
 	if (err) {
 		LOG_WRN("Failed to set socket timeout, errno %d", errno);
@@ -131,6 +141,24 @@ static int socket_tls_hostname_set(int fd, const char * const hostname)
 	return 0;
 }
 
+static int socket_pdn_id_set(int fd, uint8_t pdn_id)
+{
+	int err;
+	char buf[8] = {0};
+
+	(void) snprintf(buf, sizeof(buf), "pdn%d", pdn_id);
+
+	LOG_INF("Binding to PDN ID: %s", log_strdup(buf));
+	err = setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, &buf, strlen(buf));
+	if (err) {
+		LOG_ERR("Failed to bind socket to PDN ID %d, err %d",
+			pdn_id, errno);
+		return -ENETDOWN;
+	}
+
+	return 0;
+}
+
 static int socket_apn_set(int fd, const char *apn)
 {
 	int err;
@@ -150,28 +178,22 @@ static int socket_apn_set(int fd, const char *apn)
 	if (err) {
 		LOG_ERR("Failed to bind socket to network \"%s\", err %d",
 			log_strdup(apn), errno);
-		return -ENETUNREACH;
+		return -ENETDOWN;
 	}
 
 	return 0;
 }
 
-static int host_lookup(const char *host, int family, const char *apn,
-		       struct sockaddr *sa)
+static int host_lookup(const char *host, int family, uint8_t pdn_id,
+		       const char *apn, struct sockaddr *sa)
 {
 	int err;
-	struct addrinfo *ai;
+	char pdnserv[4];
 	char hostname[HOSTNAME_SIZE];
+	struct addrinfo *ai;
 
 	struct addrinfo hints = {
 		.ai_family = family,
-		.ai_next = apn ?
-			&(struct addrinfo) {
-				.ai_family    = AF_LTE,
-				.ai_socktype  = SOCK_MGMT,
-				.ai_protocol  = NPROTO_PDN,
-				.ai_canonname = (char *)apn
-			} : NULL,
 	};
 
 	/* Extract the hostname, without protocol or port */
@@ -180,7 +202,23 @@ static int host_lookup(const char *host, int family, const char *apn,
 		return err;
 	}
 
-	err = getaddrinfo(hostname, NULL, &hints, &ai);
+	if (pdn_id) {
+		hints.ai_flags = AI_PDNSERV;
+		(void)snprintf(pdnserv, sizeof(pdnserv), "%d", pdn_id);
+
+		err = getaddrinfo(hostname, pdnserv, &hints, &ai);
+	} else {
+		if (apn) {
+			hints.ai_next = &(struct addrinfo) {
+				.ai_family    = AF_LTE,
+				.ai_socktype  = SOCK_MGMT,
+				.ai_protocol  = NPROTO_PDN,
+				.ai_canonname = (char *)apn
+			};
+		}
+		err = getaddrinfo(hostname, NULL, &hints, &ai);
+	}
+
 	if (err) {
 		LOG_WRN("Failed to resolve hostname %s on %s",
 			log_strdup(hostname), str_family(family));
@@ -273,6 +311,11 @@ static int client_connect(struct download_client *dl, const char *host,
 
 	if (dl->config.apn != NULL && strlen(dl->config.apn)) {
 		err = socket_apn_set(*fd, dl->config.apn);
+		if (err) {
+			goto cleanup;
+		}
+	} else if (dl->config.pdn_id) {
+		err = socket_pdn_id_set(*fd, dl->config.pdn_id);
 		if (err) {
 			goto cleanup;
 		}
@@ -608,12 +651,13 @@ int download_client_connect(struct download_client *client, const char *host,
 		return -E2BIG;
 	}
 
+	err = 0;
 	/* Attempt IPv6 connection if configured, fallback to IPv4 */
 	if (IS_ENABLED(CONFIG_DOWNLOAD_CLIENT_IPV6)) {
-		err = host_lookup(host, AF_INET6, config->apn, &sa);
+		err = host_lookup(host, AF_INET6, config->pdn_id, config->apn, &sa);
 	}
 	if (err || !IS_ENABLED(CONFIG_DOWNLOAD_CLIENT_IPV6)) {
-		err = host_lookup(host, AF_INET, config->apn, &sa);
+		err = host_lookup(host, AF_INET, config->pdn_id, config->apn, &sa);
 	}
 
 	if (err) {

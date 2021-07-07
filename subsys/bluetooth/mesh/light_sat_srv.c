@@ -5,6 +5,7 @@
  */
 
 #include <stdlib.h>
+#include <sys/byteorder.h>
 #include <bluetooth/mesh/light_sat_srv.h>
 #include <bluetooth/mesh/light_hsl_srv.h>
 #include <bluetooth/mesh/gen_dtt_srv.h>
@@ -24,11 +25,12 @@ struct settings_data {
 	uint16_t dflt;
 } __packed;
 
-static int store(struct bt_mesh_light_sat_srv *srv)
+#if CONFIG_BT_SETTINGS
+static void store_timeout(struct k_work *work)
 {
-	if (!IS_ENABLED(CONFIG_BT_SETTINGS)) {
-		return 0;
-	}
+	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+	struct bt_mesh_light_sat_srv *srv = CONTAINER_OF(
+		dwork, struct bt_mesh_light_sat_srv, store_timer);
 
 	struct settings_data data = {
 		.range = srv->range,
@@ -36,8 +38,18 @@ static int store(struct bt_mesh_light_sat_srv *srv)
 		.dflt = srv->dflt,
 	};
 
-	return bt_mesh_model_data_store(srv->model, false, NULL, &data,
-					sizeof(data));
+	(void)bt_mesh_model_data_store(srv->model, false, NULL, &data,
+				       sizeof(data));
+}
+#endif
+
+static void store(struct bt_mesh_light_sat_srv *srv)
+{
+#if CONFIG_BT_SETTINGS
+	k_work_schedule(
+		&srv->store_timer,
+		K_SECONDS(CONFIG_BT_MESH_MODEL_SRV_STORE_TIMEOUT));
+#endif
 }
 
 static void encode_status(struct net_buf_simple *buf,
@@ -51,17 +63,6 @@ static void encode_status(struct net_buf_simple *buf,
 		net_buf_simple_add_u8(
 			buf, model_transition_encode(status->remaining_time));
 	}
-}
-
-static void rsp_status(struct bt_mesh_model *model,
-		       struct bt_mesh_msg_ctx *rx_ctx,
-		       struct bt_mesh_light_sat_status *status)
-{
-	BT_MESH_MODEL_BUF_DEFINE(msg, BT_MESH_LIGHT_SAT_OP_STATUS,
-				 BT_MESH_LIGHT_HSL_MSG_MAXLEN_SAT_STATUS);
-	encode_status(&msg, status);
-
-	(void)bt_mesh_model_send(model, rx_ctx, &msg, NULL, NULL);
 }
 
 static void sat_set(struct bt_mesh_model *model, struct bt_mesh_msg_ctx *ctx,
@@ -92,7 +93,7 @@ static void sat_set(struct bt_mesh_model *model, struct bt_mesh_msg_ctx *ctx,
 		 * to the app, but we still have to respond with a status.
 		 */
 		srv->handlers->get(srv, NULL, &status);
-		rsp_status(model, ctx, &status);
+		(void)bt_mesh_light_sat_srv_pub(srv, ctx, &status);
 		return;
 	}
 
@@ -122,11 +123,15 @@ static void sat_set(struct bt_mesh_model *model, struct bt_mesh_msg_ctx *ctx,
 	};
 
 	if (ack) {
-		rsp_status(model, ctx, &status);
+		(void)bt_mesh_light_sat_srv_pub(srv, ctx, &status);
 	}
 
 	(void)bt_mesh_light_sat_srv_pub(srv, NULL, &status);
 	(void)bt_mesh_lvl_srv_pub(&srv->lvl, NULL, &lvl_status);
+
+	if (IS_ENABLED(CONFIG_BT_MESH_SCENE_SRV)) {
+		bt_mesh_scene_invalidate(srv->model);
+	}
 }
 
 static void sat_get_handle(struct bt_mesh_model *model,
@@ -141,7 +146,7 @@ static void sat_get_handle(struct bt_mesh_model *model,
 	struct bt_mesh_light_sat_status status = { 0 };
 
 	srv->handlers->get(srv, ctx, &status);
-	rsp_status(model, ctx, &status);
+	(void)bt_mesh_light_sat_srv_pub(srv, ctx, &status);
 }
 
 static void sat_set_handle(struct bt_mesh_model *model,
@@ -203,10 +208,9 @@ static void lvl_set(struct bt_mesh_lvl_srv *lvl_srv,
 
 	uint16_t sat = LVL_TO_SAT(lvl_set->lvl);
 
-	set.lvl = sat;
+	set.lvl = MIN(MAX(sat, srv->range.min), srv->range.max);
 	set.transition = lvl_set->transition;
-	srv->handlers->set(srv, NULL, &set, &status);
-	srv->last = sat;
+	bt_mesh_light_sat_srv_set(srv, ctx, &set, &status);
 
 	(void)bt_mesh_light_sat_srv_pub(srv, NULL, &status);
 
@@ -238,7 +242,6 @@ static void lvl_delta_set(struct bt_mesh_lvl_srv *lvl_srv,
 	set.lvl =
 		CLAMP(start + lvl_delta->delta, srv->range.min, srv->range.max);
 	set.transition = lvl_delta->transition;
-	srv->handlers->set(srv, NULL, &set, &status);
 	bt_mesh_light_sat_srv_set(srv, ctx, &set, &status);
 
 	/* Override "last" value to be able to make corrective deltas when
@@ -275,9 +278,8 @@ static void lvl_move_set(struct bt_mesh_lvl_srv *lvl_srv,
 		target = status.current;
 	}
 
-	struct bt_mesh_model_transition transition = { 0 };
-	struct bt_mesh_light_sat set = { .lvl = target,
-					     .transition = &transition };
+	struct bt_mesh_light_sat set = { .lvl = target, .transition = NULL };
+	struct bt_mesh_model_transition transition;
 
 	if (move_set->delta != 0 && move_set->transition) {
 		uint32_t distance = abs(target - status.current);
@@ -299,6 +301,7 @@ static void lvl_move_set(struct bt_mesh_lvl_srv *lvl_srv,
 		if (time_to_edge > 0) {
 			transition.delay = move_set->transition->delay;
 			transition.time = time_to_edge;
+			set.transition = &transition;
 		}
 	}
 
@@ -318,9 +321,53 @@ const struct bt_mesh_lvl_srv_handlers _bt_mesh_light_sat_srv_lvl_handlers = {
 	.move_set = lvl_move_set,
 };
 
-static int sat_srv_pub_update(struct bt_mesh_model *mod)
+static ssize_t scene_store(struct bt_mesh_model *model, uint8_t data[])
 {
-	struct bt_mesh_light_sat_srv *srv = mod->user_data;
+	struct bt_mesh_light_sat_srv *srv = model->user_data;
+	struct bt_mesh_light_sat_status status = { 0 };
+
+	srv->handlers->get(srv, NULL, &status);
+	sys_put_le16(status.remaining_time ? status.target : status.current,
+		     &data[0]);
+
+	return 2;
+}
+
+static void scene_recall(struct bt_mesh_model *model, const uint8_t data[],
+			 size_t len,
+			 struct bt_mesh_model_transition *transition)
+{
+	struct bt_mesh_light_sat_srv *srv = model->user_data;
+	struct bt_mesh_light_sat_status status = { 0 };
+	struct bt_mesh_light_sat set = {
+		.lvl = sys_get_le16(data),
+		.transition = transition,
+	};
+
+	bt_mesh_light_sat_srv_set(srv, NULL, &set, &status);
+}
+
+static void scene_recall_complete(struct bt_mesh_model *model)
+{
+	struct bt_mesh_light_sat_srv *srv = model->user_data;
+	struct bt_mesh_light_sat_status status = { 0 };
+
+	srv->handlers->get(srv, NULL, &status);
+
+	(void)bt_mesh_light_sat_srv_pub(srv, NULL, &status);
+}
+
+BT_MESH_SCENE_ENTRY_SIG(light_hue) = {
+	.id.sig = BT_MESH_MODEL_ID_LIGHT_HSL_SAT_SRV,
+	.maxlen = 2,
+	.store = scene_store,
+	.recall = scene_recall,
+	.recall_complete = scene_recall_complete,
+};
+
+static int sat_srv_pub_update(struct bt_mesh_model *model)
+{
+	struct bt_mesh_light_sat_srv *srv = model->user_data;
 	struct bt_mesh_light_sat_status status;
 
 	srv->handlers->get(srv, NULL, &status);
@@ -340,18 +387,20 @@ static int sat_srv_init(struct bt_mesh_model *model)
 	net_buf_simple_init_with_data(&srv->buf, srv->pub_data,
 				      ARRAY_SIZE(srv->pub_data));
 
-	if (IS_ENABLED(CONFIG_BT_MESH_MODEL_EXTENSIONS)) {
-		bt_mesh_model_extend(model, srv->lvl.model);
-	}
+#if CONFIG_BT_SETTINGS
+	k_work_init_delayable(&srv->store_timer, store_timeout);
+#endif
+
+	bt_mesh_model_extend(model, srv->lvl.model);
 
 	return 0;
 }
 
-static int sat_srv_settings_set(struct bt_mesh_model *mod, const char *name,
+static int sat_srv_settings_set(struct bt_mesh_model *model, const char *name,
 				size_t len_rd, settings_read_cb read_cb,
 				void *cb_data)
 {
-	struct bt_mesh_light_sat_srv *srv = mod->user_data;
+	struct bt_mesh_light_sat_srv *srv = model->user_data;
 	struct settings_data data;
 	ssize_t len;
 
@@ -367,9 +416,26 @@ static int sat_srv_settings_set(struct bt_mesh_model *mod, const char *name,
 	return 0;
 }
 
+static void sat_srv_reset(struct bt_mesh_model *model)
+{
+	struct bt_mesh_light_sat_srv *srv = model->user_data;
+
+	srv->range.min = BT_MESH_LIGHT_HSL_MIN;
+	srv->range.max = BT_MESH_LIGHT_HSL_MAX;
+	srv->last = 0;
+	srv->dflt = 0;
+
+	net_buf_simple_reset(srv->pub.msg);
+
+	if (IS_ENABLED(CONFIG_BT_SETTINGS)) {
+		(void)bt_mesh_model_data_store(srv->model, false, NULL, NULL, 0);
+	}
+}
+
 const struct bt_mesh_model_cb _bt_mesh_light_sat_srv_cb = {
 	.init = sat_srv_init,
 	.settings_set = sat_srv_settings_set,
+	.reset = sat_srv_reset,
 };
 
 void bt_mesh_light_sat_srv_set(struct bt_mesh_light_sat_srv *srv,
@@ -381,10 +447,6 @@ void bt_mesh_light_sat_srv_set(struct bt_mesh_light_sat_srv *srv,
 	srv->handlers->set(srv, ctx, set, status);
 
 	store(srv);
-
-	if (IS_ENABLED(CONFIG_BT_MESH_SCENE_SRV)) {
-		bt_mesh_scene_invalidate(&srv->lvl.scene);
-	}
 }
 
 void bt_mesh_light_sat_srv_default_set(struct bt_mesh_light_sat_srv *srv,

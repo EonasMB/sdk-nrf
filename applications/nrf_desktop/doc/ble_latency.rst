@@ -9,7 +9,7 @@ Bluetooth LE latency module
 
 Use the |ble_latency| to:
 
-* Lower the Bluetooth LE connection latency either when :ref:`nrf_desktop_config_channel` is in use or when a firmware update is received by the :ref:`nrf_desktop_smp` (low latency ensures quick data exchange).
+* Lower the Bluetooth LE connection latency either when :ref:`nrf_desktop_config_channel` is in use or when a firmware update is received by the :ref:`nrf_desktop_ble_smp` (low latency ensures quick data exchange).
 * Request setting the initial connection parameters for a new Bluetooth connection.
 * Keep the connection latency low for the LLPM (Low Latency Packet Mode) connections to improve performance.
 * Disconnect the Bluetooth Central if the connection has not been secured in the predefined amount of time after the connection occurred.
@@ -40,7 +40,7 @@ Enabling this option increases the power consumption - the connection latency is
 Implementation details
 **********************
 
-The |ble_latency| uses delayed works (:c:struct:`k_delayed_work`) to control the connection latency and trigger the security time-out.
+The |ble_latency| uses delayed works (:c:struct:`k_work_delayable`) to control the connection latency and trigger the security timeout.
 
 .. note::
    The module does not request an increase in the connection latency until the connection is secured.
@@ -49,10 +49,10 @@ The |ble_latency| uses delayed works (:c:struct:`k_delayed_work`) to control the
 The module listens for the following events related to data transfer initiated by the connected Bluetooth central:
 
 * ``config_event`` - This event is received when the :ref:`nrf_desktop_config_channel` is in use.
-* ``ble_smp_transfer_event`` - This event is received when the firmware update is received by :ref:`nrf_desktop_smp`.
+* ``ble_smp_transfer_event`` - This event is received when the firmware update is received by :ref:`nrf_desktop_ble_smp`.
 
 When these events are received, the module sets the connection latency to low.
-When the :ref:`nrf_desktop_config_channel` is no longer in use and firmware update is not received by :ref:`nrf_desktop_smp` (no mentioned events for ``LOW_LATENCY_CHECK_PERIOD_MS``), the module sets the connection latency to :option:`CONFIG_BT_PERIPHERAL_PREF_SLAVE_LATENCY`  to reduce the power consumption.
+When the :ref:`nrf_desktop_config_channel` is no longer in use and firmware update is not received by :ref:`nrf_desktop_ble_smp` (no mentioned events for ``LOW_LATENCY_CHECK_PERIOD_MS``), the module sets the connection latency to :option:`CONFIG_BT_PERIPHERAL_PREF_SLAVE_LATENCY`  to reduce the power consumption.
 
   .. note::
      If the option :option:`CONFIG_DESKTOP_BLE_LOW_LATENCY_LOCK` is enabled, the LLPM connection latency is not increased unless the device is in the low power mode.

@@ -11,7 +11,7 @@
 #include <drivers/gps.h>
 #include <drivers/sensor.h>
 #include <console/console.h>
-#include <power/reboot.h>
+#include <sys/reboot.h>
 #include <logging/log_ctrl.h>
 #if defined(CONFIG_NRF_MODEM_LIB)
 #include <modem/nrf_modem_lib.h>
@@ -25,9 +25,17 @@
 #if defined(CONFIG_NRF_CLOUD_AGPS)
 #include <net/nrf_cloud_agps.h>
 #endif
+#if defined(CONFIG_NRF_CLOUD_PGPS)
+#include <net/nrf_cloud_pgps.h>
+#include <pm_config.h>
+#endif
+#if defined(CONFIG_NRF_CLOUD_CELL_POS)
+#include <net/nrf_cloud_cell_pos.h>
+#endif
 
 #if defined(CONFIG_LWM2M_CARRIER)
 #include <lwm2m_carrier.h>
+#include "carrier_certs.h"
 #endif
 
 #if defined(CONFIG_BOOTLOADER_MCUBOOT)
@@ -150,13 +158,20 @@ static struct k_work sensors_start_work;
 static struct k_work send_gps_data_work;
 static struct k_work send_button_data_work;
 static struct k_work send_modem_at_cmd_work;
-static struct k_delayed_work long_press_button_work;
-static struct k_delayed_work cloud_reboot_work;
-static struct k_delayed_work cycle_cloud_connection_work;
-static struct k_delayed_work device_config_work;
-static struct k_delayed_work cloud_connect_work;
+static struct k_work_delayable long_press_button_work;
+static struct k_work_delayable cloud_reboot_work;
+static struct k_work_delayable cycle_cloud_connection_work;
+static struct k_work_delayable device_config_work;
+static struct k_work_delayable cloud_connect_work;
 static struct k_work device_status_work;
-static struct k_delayed_work send_agps_request_work;
+static struct k_work_delayable send_agps_request_work;
+#if defined(CONFIG_NRF_CLOUD_CELL_POS)
+static struct k_work_delayable send_cell_pos_request_work;
+#endif
+#if defined(CONFIG_NRF_CLOUD_PGPS)
+static struct k_work_delayable manage_pgps_work;
+static struct k_work notify_pgps_work;
+#endif
 #if defined(CONFIG_MOTION)
 static struct k_work motion_data_send_work;
 #endif
@@ -181,7 +196,7 @@ static K_SEM_DEFINE(cloud_ready_to_connect, 0, 1);
 #endif
 
 #if CONFIG_MODEM_INFO
-static struct k_delayed_work rsrp_work;
+static struct k_work_delayable rsrp_work;
 #endif /* CONFIG_MODEM_INFO */
 
 enum error_type {
@@ -232,9 +247,11 @@ static void shutdown_modem(void)
 #if defined(CONFIG_LWM2M_CARRIER)
 int lwm2m_carrier_event_handler(const lwm2m_carrier_event_t *event)
 {
+	int err = 0;
+
 	switch (event->type) {
-	case LWM2M_CARRIER_EVENT_BSDLIB_INIT:
-		LOG_INF("LWM2M_CARRIER_EVENT_BSDLIB_INIT");
+	case LWM2M_CARRIER_EVENT_MODEM_INIT:
+		LOG_INF("LWM2M_CARRIER_EVENT_MODEM_INIT");
 		k_sem_give(&nrf_modem_lib_initialized);
 		break;
 	case LWM2M_CARRIER_EVENT_CONNECTING:
@@ -277,9 +294,12 @@ int lwm2m_carrier_event_handler(const lwm2m_carrier_event_t *event)
 			((lwm2m_carrier_event_error_t *)event->data)->code,
 			((lwm2m_carrier_event_error_t *)event->data)->value);
 		break;
+	case LWM2M_CARRIER_EVENT_CERTS_INIT:
+		err = carrier_cert_provision((ca_cert_tags_t *)event->data);
+		break;
 	}
 
-	return 0;
+	return err;
 }
 
 /**@brief Disconnects from cloud. First it tries using the cloud backend's
@@ -351,7 +371,7 @@ void error_handler(enum error_type err_type, int err_code)
 	case ERROR_MODEM_IRRECOVERABLE:
 		/* Blinking all LEDs ON/OFF if there is an irrecoverable error.
 		 */
-		ui_led_set_pattern(UI_LED_ERROR_BSD_IRREC);
+		ui_led_set_pattern(UI_LED_ERROR_MODEM_IRREC);
 		LOG_ERR("Error of type ERROR_MODEM_IRRECOVERABLE: %d", err_code);
 	break;
 	default:
@@ -386,6 +406,79 @@ void cloud_error_handler(int err)
 	error_handler(ERROR_CLOUD, err);
 }
 
+#if defined(CONFIG_NRF_CLOUD_PGPS)
+static struct nrf_cloud_pgps_prediction *prediction;
+
+void pgps_handler(enum nrf_cloud_pgps_event event,
+		  struct nrf_cloud_pgps_prediction *p)
+{
+	/* GPS unit asked for it, but we didn't have it; check now */
+	LOG_INF("event: %d", event);
+	if (event == PGPS_EVT_AVAILABLE) {
+		prediction = p;
+		k_work_reschedule_for_queue(&application_work_q,
+					    &manage_pgps_work,
+					    K_MSEC(100));
+	}
+}
+
+static void manage_pgps(struct k_work *work)
+{
+	ARG_UNUSED(work);
+	int err;
+
+	LOG_INF("Sending prediction to modem...");
+	err = nrf_cloud_pgps_inject(prediction, &agps_request, NULL);
+	if (err) {
+		LOG_ERR("Unable to send prediction to modem: %d", err);
+	}
+
+	err = nrf_cloud_pgps_preemptive_updates();
+	if (err) {
+		LOG_ERR("Error requesting updates: %d", err);
+	}
+}
+
+static void notify_pgps(struct k_work *work)
+{
+	ARG_UNUSED(work);
+	int err;
+
+	err = nrf_cloud_pgps_notify_prediction();
+	if (err) {
+		LOG_ERR("error requesting notification of prediction availability: %d", err);
+	}
+}
+#endif
+
+#if defined(CONFIG_NRF_CLOUD_CELL_POS)
+/* Cell-based location has a smaller payload, allow more frequent updates */
+#define CELL_POS_UPDATE_PERIOD (10 * 60 * MSEC_PER_SEC)
+
+static void send_cell_pos_request(struct k_work *work)
+{
+	int err;
+	static int64_t last_request_timestamp;
+
+	ARG_UNUSED(work);
+
+	if ((last_request_timestamp != 0) &&
+	    (k_uptime_delta(&last_request_timestamp) < CELL_POS_UPDATE_PERIOD)) {
+		LOG_WRN("Cellular positioning request was sent less than 10 minutes ago");
+	} else {
+		LOG_INF("Sending cellular positioning request");
+
+		err = nrf_cloud_cell_pos_request(CELL_POS_TYPE_SINGLE, false);
+		if (err) {
+			LOG_WRN("Failed to request cell pos data, error: %d", err);
+		} else {
+			last_request_timestamp = k_uptime_get();
+			LOG_INF("cellular positioning request sent");
+		}
+	}
+}
+#endif /* CONFIG_NRF_CLOUD_CELL_POS */
+
 static void send_agps_request(struct k_work *work)
 {
 	ARG_UNUSED(work);
@@ -395,25 +488,30 @@ static void send_agps_request(struct k_work *work)
 	static int64_t last_request_timestamp;
 
 /* Request A-GPS data no more often than every hour (time in milliseconds). */
-#define AGPS_UPDATE_PERIOD (60 * 60 * 1000)
+#define AGPS_UPDATE_PERIOD (60 * 60 * MSEC_PER_SEC)
 
 	if ((last_request_timestamp != 0) &&
 	    (k_uptime_get() - last_request_timestamp) < AGPS_UPDATE_PERIOD) {
 		LOG_WRN("A-GPS request was sent less than 1 hour ago");
-		return;
+	} else {
+		LOG_INF("Sending A-GPS request");
+		err = gps_agps_request_send(agps_request, GPS_SOCKET_NOT_PROVIDED);
+		if (err) {
+			LOG_ERR("Failed to request A-GPS data, error: %d", err);
+		} else {
+			last_request_timestamp = k_uptime_get();
+			LOG_INF("A-GPS request sent");
+#if defined(CONFIG_NRF_CLOUD_AGPS)
+			if (nrf_cloud_agps_request_in_progress()) {
+				return;
+			} /* else fall through so pgps can be used */
+#endif
+		}
 	}
-
-	LOG_INF("Sending A-GPS request");
-
-	err = gps_agps_request(agps_request, GPS_SOCKET_NOT_PROVIDED);
-	if (err) {
-		LOG_ERR("Failed to request A-GPS data, error: %d", err);
-		return;
-	}
-
-	last_request_timestamp = k_uptime_get();
-
-	LOG_INF("A-GPS request sent");
+#if defined(CONFIG_NRF_CLOUD_PGPS)
+	/* AGPS data not expected, so move on to PGPS */
+	nrf_cloud_pgps_notify_prediction();
+#endif
 #endif /* defined(CONFIG_AGPS) */
 }
 
@@ -480,7 +578,7 @@ void cloud_connect_error_handler(enum cloud_connect_result err)
 	if (reboot) {
 		LOG_ERR("Device will reboot in %d seconds",
 				CONFIG_CLOUD_CONNECT_ERR_REBOOT_S);
-		k_delayed_work_submit_to_queue(
+		k_work_reschedule_for_queue(
 			&application_work_q, &cloud_reboot_work,
 			K_SECONDS(CONFIG_CLOUD_CONNECT_ERR_REBOOT_S));
 	}
@@ -535,12 +633,12 @@ void connect_to_cloud(const int32_t connect_delay_s)
 	if (!initial_connect) {
 		LOG_INF("Attempting reconnect in %d seconds...",
 			connect_delay_s);
-		k_delayed_work_cancel(&cloud_reboot_work);
+		k_work_cancel_delayable(&cloud_reboot_work);
 	} else {
 		initial_connect = false;
 	}
 
-	k_delayed_work_submit_to_queue(&application_work_q,
+	k_work_reschedule_for_queue(&application_work_q,
 				       &cloud_connect_work,
 				       K_SECONDS(connect_delay_s));
 }
@@ -553,7 +651,7 @@ static void cloud_connect_work_fn(struct k_work *work)
 	       atomic_get(&cloud_connect_attempts),
 		   CONFIG_CLOUD_CONNECT_COUNT_MAX);
 
-	k_delayed_work_submit_to_queue(&application_work_q,
+	k_work_reschedule_for_queue(&application_work_q,
 			&cloud_reboot_work,
 			K_MSEC(CLOUD_CONNACK_WAIT_DURATION));
 
@@ -562,7 +660,7 @@ static void cloud_connect_work_fn(struct k_work *work)
 	/* Attempt cloud connection */
 	ret = cloud_connect(cloud_backend);
 	if (ret != CLOUD_CONNECT_RES_SUCCESS) {
-		k_delayed_work_cancel(&cloud_reboot_work);
+		k_work_cancel_delayable(&cloud_reboot_work);
 		/* Will not return from this function.
 		 * If the connect fails here, it is likely
 		 * that user intervention is required.
@@ -572,7 +670,7 @@ static void cloud_connect_work_fn(struct k_work *work)
 		LOG_INF("Cloud connection request sent.");
 		LOG_INF("Connection response timeout is set to %d seconds.",
 		       CLOUD_CONNACK_WAIT_DURATION / MSEC_PER_SEC);
-		k_delayed_work_submit_to_queue(&application_work_q,
+		k_work_reschedule_for_queue(&application_work_q,
 					&cloud_reboot_work,
 					K_MSEC(CLOUD_CONNACK_WAIT_DURATION));
 	}
@@ -682,6 +780,10 @@ static void gps_handler(const struct device *dev, struct gps_event *evt)
 	case GPS_EVT_PVT_FIX:
 		LOG_INF("GPS_EVT_PVT_FIX");
 		gps_time_set(&evt->pvt);
+#if defined(CONFIG_NRF_CLOUD_PGPS) && defined(CONFIG_PGPS_STORE_LOCATION)
+		LOG_INF("Storing location");
+		nrf_cloud_pgps_set_location(evt->pvt.latitude, evt->pvt.longitude);
+#endif
 		break;
 	case GPS_EVT_NMEA:
 		/* Don't spam logs */
@@ -729,9 +831,21 @@ static void gps_handler(const struct device *dev, struct gps_event *evt)
 		 * dependent corner-case where the request would not be sent.
 		 */
 		memcpy(&agps_request, &evt->agps_request, sizeof(agps_request));
-		k_delayed_work_submit_to_queue(&application_work_q,
+#if defined(CONFIG_NRF_CLOUD_PGPS)
+		LOG_INF("A-GPS request from modem; emask:0x%08X amask:0x%08X utc:%u "
+			"klo:%u neq:%u tow:%u pos:%u int:%u",
+			evt->agps_request.sv_mask_ephe, evt->agps_request.sv_mask_alm,
+			evt->agps_request.utc, evt->agps_request.klobuchar,
+			evt->agps_request.nequick, evt->agps_request.system_time_tow,
+			evt->agps_request.position, evt->agps_request.integrity);
+#endif
+#if defined(CONFIG_AGPS)
+		k_work_reschedule_for_queue(&application_work_q,
 					       &send_agps_request_work,
 					       K_SECONDS(1));
+#elif defined(CONFIG_NRF_CLOUD_PGPS)
+		k_work_submit_to_queue(&application_work_q, &notify_pgps_work);
+#endif
 		break;
 	case GPS_EVT_ERROR:
 		LOG_INF("GPS_EVT_ERROR\n");
@@ -949,7 +1063,7 @@ static void cloud_cmd_handler(struct cloud_command *cmd)
 					       &device_status_work);
 		} else if (cmd->channel == CLOUD_CHANNEL_LTE_LINK_RSRP) {
 #if CONFIG_MODEM_INFO
-			k_delayed_work_submit_to_queue(&application_work_q,
+			k_work_reschedule_for_queue(&application_work_q,
 						       &rsrp_work,
 						       K_NO_WAIT);
 #endif
@@ -979,14 +1093,8 @@ static void modem_rsrp_handler(char rsrp_value)
 
 	rsrp.value = rsrp_value;
 
-	/* Only send the RSRP if transmission is not already scheduled.
-	 * Checking CONFIG_HOLD_TIME_RSRP gives the compiler a shortcut.
-	 */
-	if (CONFIG_HOLD_TIME_RSRP == 0 ||
-	    k_delayed_work_remaining_get(&rsrp_work) == 0) {
-		k_delayed_work_submit_to_queue(&application_work_q, &rsrp_work,
+	k_work_schedule_for_queue(&application_work_q, &rsrp_work,
 					       K_NO_WAIT);
-	}
 }
 
 /**@brief Publish RSRP data to the cloud. */
@@ -1023,7 +1131,7 @@ static void modem_rsrp_data_send(struct k_work *work)
 	rsrp_prev = rsrp_current;
 
 	if (CONFIG_HOLD_TIME_RSRP > 0) {
-		k_delayed_work_submit_to_queue(&application_work_q, &rsrp_work,
+		k_work_reschedule_for_queue(&application_work_q, &rsrp_work,
 					      K_SECONDS(CONFIG_HOLD_TIME_RSRP));
 	}
 }
@@ -1117,7 +1225,7 @@ static void device_config_send(struct k_work *work)
 
 	if (gps_control_is_active() && gps_cfg_state == CLOUD_CMD_STATE_FALSE) {
 		/* GPS hasn't been stopped yet, reschedule this work */
-		k_delayed_work_submit_to_queue(&application_work_q,
+		k_work_reschedule_for_queue(&application_work_q,
 			&device_config_work, K_SECONDS(5));
 		return;
 	}
@@ -1319,6 +1427,18 @@ void sensors_start(void)
 		default:
 			break;
 		}
+#if defined(CONFIG_NRF_CLOUD_PGPS)
+		int err;
+		struct nrf_cloud_pgps_init_param param = {
+			.event_handler = pgps_handler,
+			.storage_base = PM_MCUBOOT_SECONDARY_ADDRESS,
+			.storage_size = PM_MCUBOOT_SECONDARY_SIZE};
+
+		err = nrf_cloud_pgps_init(&param);
+		if (err) {
+			LOG_ERR("Error from PGPS init: %d", err);
+		}
+#endif
 		set_gps_enable(start_gps);
 		started = true;
 	}
@@ -1343,7 +1463,7 @@ static void on_user_pairing_req(const struct cloud_event *evt)
 		/* If the association is not done soon enough (< ~5 min?)
 		 * a connection cycle is needed... TBD why.
 		 */
-		k_delayed_work_submit_to_queue(&application_work_q,
+		k_work_reschedule_for_queue(&application_work_q,
 					       &cycle_cloud_connection_work,
 					       CONN_CYCLE_AFTER_ASSOCIATION_REQ_MS);
 	}
@@ -1362,7 +1482,7 @@ static void cycle_cloud_connection(struct k_work *work)
 	}
 
 	/* Reboot fail-safe on disconnect */
-	k_delayed_work_submit_to_queue(&application_work_q, &cloud_reboot_work,
+	k_work_reschedule_for_queue(&application_work_q, &cloud_reboot_work,
 				       K_MSEC(reboot_wait_ms));
 }
 
@@ -1371,7 +1491,7 @@ void on_pairing_done(void)
 {
 	if (atomic_get(&cloud_association) ==
 			CLOUD_ASSOCIATION_STATE_REQUESTED) {
-		k_delayed_work_cancel(&cycle_cloud_connection_work);
+		k_work_cancel_delayable(&cycle_cloud_connection_work);
 
 		/* After successful association, the device must
 		 * reconnect to the cloud.
@@ -1380,12 +1500,29 @@ void on_pairing_done(void)
 		LOG_INF("Reconnecting for cloud policy to take effect.");
 		atomic_set(&cloud_association,
 				   CLOUD_ASSOCIATION_STATE_RECONNECT);
-		k_delayed_work_submit_to_queue(&application_work_q,
+		k_work_reschedule_for_queue(&application_work_q,
 					       &cycle_cloud_connection_work,
 					       K_NO_WAIT);
 	} else {
 		atomic_set(&cloud_association, CLOUD_ASSOCIATION_STATE_PAIRED);
 	}
+}
+
+void fota_done_handler(const struct cloud_event *const evt)
+{
+#if defined(CONFIG_NRF_CLOUD_FOTA)
+	enum nrf_cloud_fota_type fota_type = NRF_CLOUD_FOTA_TYPE__INVALID;
+
+	if (evt && evt->data.msg.buf) {
+		fota_type = *(enum nrf_cloud_fota_type *)evt->data.msg.buf;
+		LOG_INF("FOTA type: %d", fota_type);
+	}
+#endif
+#if defined(CONFIG_LTE_LINK_CONTROL)
+		lte_lc_power_off();
+#endif
+		LOG_INF("Rebooting to complete FOTA update");
+		sys_reboot(SYS_REBOOT_COLD);
 }
 
 void cloud_event_handler(const struct cloud_backend *const backend,
@@ -1422,21 +1559,43 @@ void cloud_event_handler(const struct cloud_backend *const backend,
 
 		LOG_INF("CLOUD_EVT_DATA_RECEIVED");
 		err = cloud_decode_command(evt->data.msg.buf);
-		if (err == 0) {
+		if (err <= 0) {
 			/* Cloud decoder has handled the data */
-			return;
+			if (err < 0) {
+				LOG_ERR("cloud_decode_command() failed: %d",
+					err);
+			}
+			break;
 		}
 
 #if defined(CONFIG_AGPS)
 		err = gps_process_agps_data(evt->data.msg.buf,
 					    evt->data.msg.len);
+#if defined(CONFIG_NRF_CLOUD_PGPS)
+		if (!err) {
+			LOG_INF("A-GPS data processed");
+
+			/* call us back when prediction is ready */
+			k_work_submit_to_queue(&application_work_q, &notify_pgps_work);
+
+			/* data was valid; no need to pass to other handlers */
+			break;
+		}
+#else
 		if (err) {
 			LOG_WRN("Data was not valid A-GPS data, err: %d", err);
 			break;
 		}
-
+#endif
 		LOG_INF("A-GPS data processed");
 #endif /* defined(CONFIG_AGPS) */
+#if defined(CONFIG_NRF_CLOUD_PGPS)
+		err = nrf_cloud_pgps_process(evt->data.msg.buf,
+					    evt->data.msg.len);
+		if (err) {
+			LOG_ERR("Error processing PGPS packet: %d", err);
+		}
+#endif
 		break;
 	}
 	case CLOUD_EVT_PAIR_REQUEST:
@@ -1446,15 +1605,13 @@ void cloud_event_handler(const struct cloud_backend *const backend,
 	case CLOUD_EVT_PAIR_DONE:
 		LOG_INF("CLOUD_EVT_PAIR_DONE");
 		on_pairing_done();
+		break;
 	case CLOUD_EVT_FOTA_ERROR:
 		LOG_INF("CLOUD_EVT_FOTA_ERROR");
 		break;
 	case CLOUD_EVT_FOTA_DONE:
 		LOG_INF("CLOUD_EVT_FOTA_DONE");
-#if defined(CONFIG_LTE_LINK_CONTROL)
-		lte_lc_power_off();
-#endif
-		sys_reboot(SYS_REBOOT_COLD);
+		fota_done_handler(evt);
 		break;
 	default:
 		LOG_WRN("Unknown cloud event type: %d", evt->type);
@@ -1467,7 +1624,7 @@ void connection_evt_handler(const struct cloud_event *const evt)
 	if (evt->type == CLOUD_EVT_CONNECTING) {
 		LOG_INF("CLOUD_EVT_CONNECTING");
 		ui_led_set_pattern(UI_CLOUD_CONNECTING);
-		k_delayed_work_cancel(&cloud_reboot_work);
+		k_work_cancel_delayable(&cloud_reboot_work);
 
 		if (evt->data.err != CLOUD_CONNECT_RES_SUCCESS) {
 			cloud_connect_error_handler(evt->data.err);
@@ -1475,7 +1632,7 @@ void connection_evt_handler(const struct cloud_event *const evt)
 		return;
 	} else if (evt->type == CLOUD_EVT_CONNECTED) {
 		LOG_INF("CLOUD_EVT_CONNECTED");
-		k_delayed_work_cancel(&cloud_reboot_work);
+		k_work_cancel_delayable(&cloud_reboot_work);
 		k_sem_take(&cloud_disconnected, K_NO_WAIT);
 		atomic_set(&cloud_connect_attempts, 0);
 #if !IS_ENABLED(CONFIG_MQTT_CLEAN_SESSION)
@@ -1536,12 +1693,16 @@ static void set_gps_enable(const bool enable)
 	int32_t delay_ms = 0;
 	bool changing = (enable != gps_control_is_enabled());
 
-	/* Exit early if the link is not ready or if the cloud
-	 * state is defined and the local state is not changing.
+	/* Exit early if the link is not ready or if the cloud state is defined and the local
+	 * state is not changing.
 	 */
 	if (!data_send_enabled() ||
 	    ((cloud_get_channel_enable_state(CLOUD_CHANNEL_GPS) !=
 	    CLOUD_CMD_STATE_UNDEFINED) && !changing)) {
+		return;
+	}
+
+	if (!IS_ENABLED(CONFIG_NRF9160_GPS) && !IS_ENABLED(CONFIG_GPS_SIM)) {
 		return;
 	}
 
@@ -1565,7 +1726,7 @@ static void set_gps_enable(const bool enable)
 	}
 
 	/* Update config state in cloud */
-	k_delayed_work_submit_to_queue(&application_work_q,
+	k_work_reschedule_for_queue(&application_work_q,
 			&device_config_work, K_MSEC(delay_ms));
 }
 
@@ -1588,20 +1749,27 @@ static void work_init(void)
 	k_work_init(&send_gps_data_work, send_gps_data_work_fn);
 	k_work_init(&send_button_data_work, send_button_data_work_fn);
 	k_work_init(&send_modem_at_cmd_work, send_modem_at_cmd_work_fn);
-	k_delayed_work_init(&send_agps_request_work, send_agps_request);
-	k_delayed_work_init(&long_press_button_work, long_press_handler);
-	k_delayed_work_init(&cloud_reboot_work, cloud_reboot_handler);
-	k_delayed_work_init(&cycle_cloud_connection_work,
+	k_work_init_delayable(&send_agps_request_work, send_agps_request);
+	k_work_init_delayable(&long_press_button_work, long_press_handler);
+	k_work_init_delayable(&cloud_reboot_work, cloud_reboot_handler);
+	k_work_init_delayable(&cycle_cloud_connection_work,
 			    cycle_cloud_connection);
-	k_delayed_work_init(&device_config_work, device_config_send);
-	k_delayed_work_init(&cloud_connect_work, cloud_connect_work_fn);
+#if defined(CONFIG_NRF_CLOUD_CELL_POS)
+	k_work_init_delayable(&send_cell_pos_request_work, send_cell_pos_request);
+#endif
+#if defined(CONFIG_NRF_CLOUD_PGPS)
+	k_work_init_delayable(&manage_pgps_work, manage_pgps);
+	k_work_init(&notify_pgps_work, notify_pgps);
+#endif
+	k_work_init_delayable(&device_config_work, device_config_send);
+	k_work_init_delayable(&cloud_connect_work, cloud_connect_work_fn);
 	k_work_init(&device_status_work, device_status_send);
 #if defined(CONFIG_MOTION)
 	k_work_init(&motion_data_send_work, motion_data_send);
 #endif
 	k_work_init(&no_sim_go_offline_work, no_sim_go_offline);
 #if CONFIG_MODEM_INFO
-	k_delayed_work_init(&rsrp_work, modem_rsrp_data_send);
+	k_work_init_delayable(&rsrp_work, modem_rsrp_data_send);
 #endif /* CONFIG_MODEM_INFO */
 }
 
@@ -1611,6 +1779,11 @@ static void cloud_api_init(void)
 
 	cloud_backend = cloud_get_binding("NRF_CLOUD");
 	__ASSERT(cloud_backend != NULL, "nRF Cloud backend not found");
+
+#if defined(CONFIG_NRF_CLOUD_CLIENT_ID_SRC_RUNTIME)
+	cloud_backend->config->id = CONFIG_CLOUD_RUNTIME_CLIENT_ID;
+	cloud_backend->config->id_len = strlen(CONFIG_CLOUD_RUNTIME_CLIENT_ID);
+#endif
 
 	ret = cloud_init(cloud_backend, cloud_event_handler);
 	if (ret) {
@@ -1701,7 +1874,7 @@ static void sensors_init(void)
 #endif
 #if defined(CONFIG_ENVIRONMENT_SENSORS)
 	err = env_sensors_init_and_start(&application_work_q, env_data_send);
-	if (err) {
+	if (err < 0) {
 		LOG_ERR("Environmental sensors init failed, error: %d", err);
 #if CONFIG_USE_BME680_BSEC
 		if (err == -34) {
@@ -1715,7 +1888,7 @@ static void sensors_init(void)
 #if CONFIG_LIGHT_SENSOR
 	err = light_sensor_init_and_start(&application_work_q,
 					  light_sensor_data_send);
-	if (err) {
+	if (err < 0) {
 		LOG_ERR("Light sensor init failed, error: %d", err);
 	}
 #endif /* CONFIG_LIGHT_SENSOR */
@@ -1734,6 +1907,12 @@ static void sensors_init(void)
 		LOG_ERR("GPS could not be initialized");
 		return;
 	}
+#if defined(CONFIG_NRF_CLOUD_CELL_POS)
+	/* Make initial cell-based location request */
+	k_work_reschedule_for_queue(&application_work_q,
+					&send_cell_pos_request_work,
+					K_SECONDS(1));
+#endif
 }
 
 #if defined(CONFIG_USE_UI_MODULE)
@@ -1755,11 +1934,11 @@ static void ui_evt_handler(struct ui_evt evt)
 	if (IS_ENABLED(CONFIG_GPS_CONTROL_ON_LONG_PRESS) &&
 	   (evt.button == UI_BUTTON_1)) {
 		if (evt.type == UI_EVT_BUTTON_ACTIVE) {
-			k_delayed_work_submit_to_queue(&application_work_q,
+			k_work_reschedule_for_queue(&application_work_q,
 						       &long_press_button_work,
 						       K_SECONDS(5));
 		} else {
-			k_delayed_work_cancel(&long_press_button_work);
+			k_work_cancel_delayable(&long_press_button_work);
 		}
 	}
 
@@ -1880,6 +2059,14 @@ static void lte_handler(const struct lte_lc_evt *const evt)
 	case LTE_LC_EVT_CELL_UPDATE:
 		LOG_INF("LTE cell changed: Cell ID: %d, Tracking area: %d",
 			evt->cell.id, evt->cell.tac);
+#if defined(CONFIG_NRF_CLOUD_CELL_POS)
+		/* Request location based on new network info */
+		if (data_send_enabled() && evt->cell.id != -1) {
+			k_work_reschedule_for_queue(&application_work_q,
+						       &send_cell_pos_request_work,
+						       K_SECONDS(1));
+		}
+#endif
 		break;
 	default:
 		break;
@@ -1910,9 +2097,9 @@ static void date_time_event_handler(const struct date_time_evt *evt)
 void main(void)
 {
 	LOG_INF("Asset tracker started");
-	k_work_q_start(&application_work_q, application_stack_area,
+	k_work_queue_start(&application_work_q, application_stack_area,
 		       K_THREAD_STACK_SIZEOF(application_stack_area),
-		       CONFIG_APPLICATION_WORKQUEUE_PRIORITY);
+		       CONFIG_APPLICATION_WORKQUEUE_PRIORITY, NULL);
 	if (IS_ENABLED(CONFIG_WATCHDOG)) {
 		watchdog_init_and_start(&application_work_q);
 	}

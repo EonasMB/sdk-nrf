@@ -4,18 +4,17 @@
 # SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
 #
 
-target_sources(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ble_state.c)
+target_sources_ifdef(CONFIG_CAF_BLE_BOND_SUPPORTED
+		     app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ble_bond.c)
 
-target_sources(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ble_bond.c)
+target_sources_ifdef(CONFIG_DESKTOP_BLE_ENABLE_PASSKEY
+		     app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ble_passkey.c)
 
 target_sources_ifdef(CONFIG_BT_PERIPHERAL
 		     app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ble_latency.c)
 
 target_sources_ifdef(CONFIG_BT_CENTRAL
 		     app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ble_conn_params.c)
-
-target_sources_ifdef(CONFIG_DESKTOP_BLE_ADVERTISING_ENABLE
-		     app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ble_adv.c)
 
 target_sources_ifdef(CONFIG_DESKTOP_BLE_DISCOVERY_ENABLE
 		     app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ble_discovery.c)
@@ -41,7 +40,7 @@ target_sources_ifdef(CONFIG_DESKTOP_HID_STATE_ENABLE
 target_sources_ifdef(CONFIG_DESKTOP_USB_ENABLE
 		     app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/usb_state.c)
 
-target_sources_ifdef(CONFIG_DESKTOP_LED_ENABLE
+target_sources_ifdef(CONFIG_CAF_LEDS
 		     app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/led_state.c)
 
 target_sources_ifdef(CONFIG_DESKTOP_LED_STREAM_ENABLE
@@ -82,9 +81,6 @@ target_sources_ifdef(CONFIG_DESKTOP_FAILSAFE_ENABLE
 
 target_sources_ifdef(CONFIG_DESKTOP_CPU_MEAS_ENABLE
 		     app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpu_meas.c)
-
-target_sources_ifdef(CONFIG_DESKTOP_SMP_ENABLE
-		     app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/smp.c)
 
 target_sources_ifdef(CONFIG_DESKTOP_PROFILER_SYNC_GPIO_ENABLE
 		     app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/profiler_sync.c)

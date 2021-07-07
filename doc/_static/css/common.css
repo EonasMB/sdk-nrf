@@ -1,0 +1,24 @@
+/* Background colors for the different sets */
+.ncs {
+    background-color: #00a9ce;
+}
+
+.zephyr {
+    background-color: #a67dfb;
+}
+
+.mcuboot {
+    background-color: #159957;
+}
+
+.nrfxlib {
+    background-color: #ff9933;
+}
+
+.nrfx {
+    background-color: #412ee8;
+}
+
+.kconfig {
+    background-color: #e82424;
+}

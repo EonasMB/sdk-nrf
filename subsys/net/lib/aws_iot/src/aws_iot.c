@@ -283,6 +283,7 @@ static void aws_iot_notify_event(const struct aws_iot_evt *aws_iot_evt)
 		cloud_evt.type = CLOUD_EVT_ERROR;
 	case AWS_IOT_EVT_FOTA_ERROR:
 		cloud_evt.type = CLOUD_EVT_FOTA_ERROR;
+		cloud_evt.data.err = aws_iot_evt->data.err;
 		break;
 	case AWS_IOT_EVT_FOTA_DL_PROGRESS:
 		cloud_evt.type = CLOUD_EVT_FOTA_DL_PROGRESS;
@@ -338,6 +339,7 @@ static void aws_fota_cb_handler(struct aws_fota_event *fota_evt)
 		LOG_DBG("AWS_FOTA_EVT_DL_PROGRESS, (%d%%)",
 			fota_evt->dl.progress);
 		aws_iot_evt.type = AWS_IOT_EVT_FOTA_DL_PROGRESS;
+		aws_iot_evt.data.fota_progress = fota_evt->dl.progress;
 		break;
 	default:
 		LOG_ERR("Unknown FOTA event");
@@ -658,16 +660,9 @@ static void mqtt_evt_handler(struct mqtt_client *const c,
 		return;
 	} else if (err < 0) {
 		LOG_ERR("aws_fota_mqtt_evt_handler, error: %d", err);
-		LOG_DBG("Disconnecting MQTT client...");
-
-		atomic_set(&disconnect_requested, 1);
-		err = mqtt_disconnect(c);
-		if (err) {
-			LOG_ERR("Could not disconnect: %d", err);
-			aws_iot_evt.type = AWS_IOT_EVT_ERROR;
-			aws_iot_evt.data.err = err;
-			aws_iot_notify_event(&aws_iot_evt);
-		}
+		aws_iot_evt.type = AWS_IOT_EVT_FOTA_ERROR;
+		aws_iot_evt.data.err = err;
+		aws_iot_notify_event(&aws_iot_evt);
 	}
 #endif
 
@@ -991,6 +986,51 @@ static int client_broker_init(struct mqtt_client *const client)
 	return err;
 }
 
+static int connect_client(struct aws_iot_config *const config)
+{
+	int err;
+
+	err = client_broker_init(&client);
+	if (err) {
+		LOG_ERR("client_broker_init, error: %d", err);
+		return err;
+	}
+
+	err = mqtt_connect(&client);
+	if (err) {
+		LOG_ERR("mqtt_connect, error: %d", err);
+		err = connect_error_translate(err);
+		return err;
+	}
+
+	if (IS_ENABLED(CONFIG_AWS_IOT_SEND_TIMEOUT)) {
+		struct timeval timeout = {
+			.tv_sec = CONFIG_AWS_IOT_SEND_TIMEOUT_SEC
+		};
+
+		err = setsockopt(client.transport.tls.sock,
+				 SOL_SOCKET,
+				 SO_SNDTIMEO,
+				 &timeout,
+				 sizeof(timeout));
+		if (err == -1) {
+			LOG_WRN("Failed to set timeout, errno: %d", errno);
+
+			/* Don't propagate this as an error. */
+			err = 0;
+		} else {
+			LOG_DBG("Using send socket timeout of %d seconds",
+				CONFIG_AWS_IOT_SEND_TIMEOUT_SEC);
+		}
+	}
+
+	if (config != NULL) {
+		config->socket = client.transport.tls.sock;
+	}
+
+	return 0;
+}
+
 static int connection_poll_start(void)
 {
 	if (atomic_get(&connection_poll_active)) {
@@ -1096,30 +1136,23 @@ int aws_iot_connect(struct aws_iot_config *const config)
 
 	if (IS_ENABLED(CONFIG_AWS_IOT_CONNECTION_POLL_THREAD)) {
 		err = connection_poll_start();
+		if (err) {
+			LOG_WRN("connection_poll_start failed, error: %d", err);
+			return err;
+		}
 	} else {
 		atomic_set(&disconnect_requested, 0);
 
-		err = client_broker_init(&client);
+		err = connect_client(config);
 		if (err) {
-			LOG_ERR("client_broker_init, error: %d", err);
+			LOG_WRN("connect_client failed, error: %d", err);
 			return err;
 		}
 
-		err = mqtt_connect(&client);
-		if (err) {
-			LOG_ERR("mqtt_connect, error: %d", err);
-		}
-
-		err = connect_error_translate(err);
-
-		if (err == 0) {
-			atomic_set(&aws_iot_disconnected, 0);
-			config->socket = client.transport.tls.sock;
-		}
-
+		atomic_set(&aws_iot_disconnected, 0);
 	}
 
-	return err;
+	return 0;
 }
 
 int aws_iot_subscription_topics_add(
@@ -1153,6 +1186,12 @@ int aws_iot_init(const struct aws_iot_config *const config,
 	int err;
 
 	if (IS_ENABLED(CONFIG_AWS_IOT_CLIENT_ID_APP) &&
+		config == NULL) {
+		LOG_ERR("config is NULL");
+		return -EINVAL;
+	}
+
+	if (IS_ENABLED(CONFIG_AWS_IOT_CLIENT_ID_APP) &&
 	    config->client_id_len >= CONFIG_AWS_IOT_CLIENT_ID_MAX_LEN) {
 		LOG_ERR("Client ID string too long");
 		return -EMSGSIZE;
@@ -1164,7 +1203,12 @@ int aws_iot_init(const struct aws_iot_config *const config,
 		return -ENODATA;
 	}
 
-	err = aws_iot_topics_populate(config->client_id, config->client_id_len);
+	if (IS_ENABLED(CONFIG_AWS_IOT_CLIENT_ID_APP)) {
+		err = aws_iot_topics_populate(config->client_id, config->client_id_len);
+	} else {
+		err = aws_iot_topics_populate(NULL, 0);
+	}
+
 	if (err) {
 		LOG_ERR("aws_topics_populate, error: %d", err);
 		return err;
@@ -1201,26 +1245,15 @@ start:
 	aws_iot_evt.type = AWS_IOT_EVT_CONNECTING;
 	aws_iot_notify_event(&aws_iot_evt);
 
-	err = client_broker_init(&client);
-	if (err) {
-		LOG_ERR("client_broker_init, error: %d", err);
-	}
-
-	err = mqtt_connect(&client);
-	if (err) {
-		LOG_ERR("mqtt_connect, error: %d", err);
-	}
-
-	err = connect_error_translate(err);
-
+	err = connect_client(NULL);
 	if (err != AWS_IOT_CONNECT_RES_SUCCESS) {
 		aws_iot_evt.data.err = err;
 		aws_iot_evt.type = AWS_IOT_EVT_CONNECTING;
 		aws_iot_notify_event(&aws_iot_evt);
 		goto reset;
-	} else {
-		LOG_DBG("AWS broker connection request sent.");
 	}
+
+	LOG_DBG("AWS IoT broker connection request sent");
 
 	fds[0].fd = client.transport.tls.sock;
 	fds[0].events = POLLIN;

@@ -44,7 +44,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #define UART_RX_TIMEOUT 50
 
 static const struct device *uart;
-static struct k_delayed_work uart_work;
+static struct k_work_delayable uart_work;
 
 K_SEM_DEFINE(nus_write_sem, 0, 1);
 
@@ -181,8 +181,7 @@ static void uart_cb(const struct device *dev, struct uart_event *evt, void *user
 			buf->len = 0;
 		} else {
 			LOG_WRN("Not able to allocate UART receive buffer");
-			k_delayed_work_submit(&uart_work,
-					      UART_WAIT_FOR_BUF_DELAY);
+			k_work_reschedule(&uart_work, UART_WAIT_FOR_BUF_DELAY);
 			return;
 		}
 
@@ -241,7 +240,7 @@ static void uart_work_handler(struct k_work *item)
 		buf->len = 0;
 	} else {
 		LOG_WRN("Not able to allocate UART receive buffer");
-		k_delayed_work_submit(&uart_work, UART_WAIT_FOR_BUF_DELAY);
+		k_work_reschedule(&uart_work, UART_WAIT_FOR_BUF_DELAY);
 		return;
 	}
 
@@ -266,7 +265,7 @@ static int uart_init(void)
 		return -ENOMEM;
 	}
 
-	k_delayed_work_init(&uart_work, uart_work_handler);
+	k_work_init_delayable(&uart_work, uart_work_handler);
 
 	err = uart_callback_set(uart, uart_cb, NULL);
 	if (err) {
@@ -328,6 +327,15 @@ static void gatt_discover(struct bt_conn *conn)
 	}
 }
 
+static void exchange_func(struct bt_conn *conn, uint8_t err, struct bt_gatt_exchange_params *params)
+{
+	if (!err) {
+		LOG_INF("MTU exchange done");
+	} else {
+		LOG_WRN("MTU exchange failed (err %" PRIu8 ")", err);
+	}
+}
+
 static void connected(struct bt_conn *conn, uint8_t conn_err)
 {
 	char addr[BT_ADDR_LE_STR_LEN];
@@ -354,6 +362,14 @@ static void connected(struct bt_conn *conn, uint8_t conn_err)
 	}
 
 	LOG_INF("Connected: %s", log_strdup(addr));
+
+	static struct bt_gatt_exchange_params exchange_params;
+
+	exchange_params.func = exchange_func;
+	err = bt_gatt_exchange_mtu(conn, &exchange_params);
+	if (err) {
+		LOG_WRN("MTU exchange failed (err %d)", err);
+	}
 
 	err = bt_conn_set_security(conn, BT_SECURITY_L2);
 	if (err) {

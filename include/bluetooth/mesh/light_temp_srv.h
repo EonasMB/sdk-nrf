@@ -39,10 +39,6 @@ struct bt_mesh_light_temp_srv;
 				 BT_MESH_LIGHT_TEMP_STATUS,                    \
 				 BT_MESH_LIGHT_CTL_MSG_MAXLEN_TEMP_STATUS)) }, \
 		.handlers = _handlers,                                         \
-		.range = {                                                     \
-			.min = BT_MESH_LIGHT_TEMP_MIN,                         \
-			.max = BT_MESH_LIGHT_TEMP_MAX,                         \
-		},                                                             \
 	}
 
 /** @def BT_MESH_MODEL_LIGHT_TEMP_SRV
@@ -128,14 +124,17 @@ struct bt_mesh_light_temp_srv {
 	struct bt_mesh_tid_ctx prev_transaction;
 	/** Handler function structure. */
 	const struct bt_mesh_light_temp_srv_handlers *handlers;
+
+#if CONFIG_BT_SETTINGS
+	/** Storage timer */
+	struct k_work_delayable store_timer;
+#endif
 	/** Default light temperature and delta UV */
 	struct bt_mesh_light_temp dflt;
 	/** Current Temperature range. */
 	struct bt_mesh_light_temp_range range;
 	/** The last known color temperature. */
 	struct bt_mesh_light_temp last;
-	/** Scene data entry */
-	struct bt_mesh_scene_entry scene;
 };
 
 /** @brief Publish the current CTL Temperature status.

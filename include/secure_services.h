@@ -30,6 +30,9 @@
 extern "C" {
 #endif
 
+void before_nse(void);
+void after_nse(void);
+
 /** Implement a wrapper function around a secure_service.
  *
  * This function must reside in the non-secure binary. It makes the secure
@@ -48,7 +51,10 @@ extern "C" {
  */
 #define NRF_NSE(ret, name, ...) \
 ret name ## _nse(__VA_ARGS__); \
-TZ_THREAD_SAFE_NONSECURE_ENTRY_FUNC(name, ret, name ## _nse, __VA_ARGS__)
+ret __attribute__((naked)) name(__VA_ARGS__) \
+{ \
+	__TZ_WRAP_FUNC(before_nse, name ## _nse, after_nse); \
+}
 
 /** Request a system reboot from the Secure Firmware.
  *
@@ -58,18 +64,13 @@ void spm_request_system_reboot(void);
 
 /** Request a random number from the Secure Firmware.
  *
- * This provides a True Random Number from the on-board random number generator.
+ * This provides a CTR_DRBG number from the CC3XX platform libraries.
  *
- * @note Currently, the RNG hardware is run each time this is called. This
- *       spends significant time and power.
- *
- * @param[out] output  The random number. Must be at least @c len long.
- * @param[in]  len     The length of the output array. Currently, @c len must be
- *                     144.
+ * @param[out] output  The CTR_DRBG number. Must be at least @c len long.
+ * @param[in]  len     The length of the output array.
  * @param[out] olen    The length of the random number provided.
  *
- * @retval 0        If successful.
- * @retval -EINVAL  If @c len is invalid. Currently, @c len must be 144.
+ * @return non-negative on success, negative errno code on fail
  */
 int spm_request_random_number(uint8_t *output, size_t len, size_t *olen);
 
@@ -130,6 +131,32 @@ int spm_prevalidate_b1_upgrade(uint32_t dst_addr, uint32_t src_addr);
  * @param[in]  busy_wait_us  The number of microseconds to wait for.
  */
 void spm_busy_wait(uint32_t busy_wait_us);
+
+/** @brief Prototype of the function that is called in non-secure context from
+ *	   secure fault handler context.
+ *
+ * Function can be used to print pending logging data before reboot.
+ */
+typedef void (*spm_ns_on_fatal_error_t)(void);
+
+/** @brief Set handler which is called by the SPM fault handler.
+ *
+ * Handler can be used to print out any pending log data before reset.
+ *
+ * @note It is only for debugging purposes!
+ *
+ * @param handler Handler.
+ *
+ * @retval -ENOTSUP if feature is disabled.
+ * @retval 0 on success.
+ */
+int spm_set_ns_fatal_error_handler(spm_ns_on_fatal_error_t handler);
+
+/** @brief Call non-secure fatal error handler.
+ *
+ * Must be called from fatal error handler.
+ */
+void z_spm_ns_fatal_error_handler(void);
 
 #ifdef __cplusplus
 }

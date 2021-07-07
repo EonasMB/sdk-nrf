@@ -286,7 +286,7 @@ static int init_supl(int socket)
 static int supl_start(const struct gps_agps_request request)
 {
 	int err;
-	nrf_gnss_agps_data_frame_t req = {
+	struct nrf_modem_gnss_agps_data_frame req = {
 		.sv_mask_ephe = request.sv_mask_ephe,
 		.sv_mask_alm = request.sv_mask_alm,
 		.data_flags =
@@ -315,11 +315,12 @@ static int supl_start(const struct gps_agps_request request)
 	err = supl_session(&req);
 	if (err) {
 		LOG_ERR("SUPL session failed, error: %d", err);
-		return err;
+		goto cleanup;
 	}
 
 	LOG_INF("SUPL session finished successfully");
 
+cleanup:
 	close_supl_socket();
 
 	return err;
@@ -327,7 +328,7 @@ static int supl_start(const struct gps_agps_request request)
 
 #endif /* CONFIG_AGPS_SRC_SUPL */
 
-int gps_agps_request(struct gps_agps_request request, int socket)
+int gps_agps_request_send(struct gps_agps_request request, int socket)
 {
 	int err;
 

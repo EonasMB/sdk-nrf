@@ -307,6 +307,9 @@ void nrf_modem_os_errno_set(int err_code)
 	case NRF_ETIMEDOUT:
 		errno = ETIMEDOUT;
 		break;
+	case NRF_ECONNREFUSED:
+		errno = ECONNREFUSED;
+		break;
 	case NRF_ENOBUFS:
 		errno = ENOBUFS;
 		break;
@@ -451,6 +454,7 @@ void *nrf_modem_os_alloc(size_t bytes)
 		LOG_INF("alloc(%d) -> %p", bytes, addr);
 	} else {
 		heap_diag.failed_allocs++;
+		LOG_WRN("alloc(%d) -> %p", bytes, addr);
 	}
 #endif
 	return addr;
@@ -472,6 +476,7 @@ void *nrf_modem_os_shm_tx_alloc(size_t bytes)
 		LOG_INF("shm_tx_alloc(%d) -> %p", bytes, addr);
 	} else {
 		shmem_diag.failed_allocs++;
+		LOG_WRN("shm_tx_alloc(%d) -> %p", bytes, addr);
 	}
 #endif
 	return addr;
@@ -488,14 +493,14 @@ void nrf_modem_os_shm_tx_free(void *mem)
 void nrf_modem_lib_heap_diagnose(void)
 {
 	printk("nrf_modem heap dump:\n");
-	sys_heap_dump(&library_heap.heap);
+	sys_heap_print_info(&library_heap.heap, false);
 	printk("Failed allocations: %u\n", heap_diag.failed_allocs);
 }
 
 void nrf_modem_lib_shm_tx_diagnose(void)
 {
 	printk("nrf_modem tx dump:\n");
-	sys_heap_dump(&shmem_heap.heap);
+	sys_heap_print_info(&shmem_heap.heap, false);
 	printk("Failed allocations: %u\n", shmem_diag.failed_allocs);
 }
 
@@ -510,7 +515,7 @@ enum heap_type {
 };
 
 struct task {
-	struct k_delayed_work work;
+	struct k_work_delayable work;
 	enum heap_type type;
 };
 
@@ -529,14 +534,14 @@ static void diag_task(struct k_work *item)
 	case SHMEM:
 #ifdef CONFIG_NRF_MODEM_LIB_SHM_TX_DUMP_PERIODIC
 		nrf_modem_lib_shm_tx_diagnose();
-		k_delayed_work_submit(&shmem_task.work,
+		k_work_reschedule(&shmem_task.work,
 			K_MSEC(CONFIG_NRF_MODEM_LIB_SHMEM_TX_DUMP_PERIOD_MS));
 #endif
 		break;
 	case LIBRARY:
 #ifdef CONFIG_NRF_MODEM_LIB_HEAP_DUMP_PERIODIC
 		nrf_modem_lib_heap_diagnose();
-		k_delayed_work_submit(&heap_task.work,
+		k_work_reschedule(&heap_task.work,
 			K_MSEC(CONFIG_NRF_MODEM_LIB_HEAP_DUMP_PERIOD_MS));
 #endif
 		break;
@@ -566,20 +571,20 @@ void nrf_modem_os_init(void)
 
 #if defined(CONFIG_NRF_MODEM_LIB_SHM_TX_DUMP_PERIODIC) || \
 	defined(CONFIG_NRF_MODEM_LIB_HEAP_DUMP_PERIODIC)
-	k_work_q_start(&modem_diag_worqk, work_q_stack_area,
-		       K_THREAD_STACK_SIZEOF(work_q_stack_area),
-		       K_LOWEST_APPLICATION_THREAD_PRIO);
+	k_work_queue_start(&modem_diag_worqk, work_q_stack_area,
+			   K_THREAD_STACK_SIZEOF(work_q_stack_area),
+			   K_LOWEST_APPLICATION_THREAD_PRIO, NULL);
 #endif
 
 #ifdef CONFIG_NRF_MODEM_LIB_SHM_TX_DUMP_PERIODIC
-	k_delayed_work_init(&shmem_task.work, diag_task);
-	k_delayed_work_submit(&shmem_task.work,
+	k_work_init_delayable(&shmem_task.work, diag_task);
+	k_work_reschedule(&shmem_task.work,
 		K_MSEC(CONFIG_NRF_MODEM_LIB_SHMEM_TX_DUMP_PERIOD_MS));
 #endif
 
 #ifdef CONFIG_NRF_MODEM_LIB_HEAP_DUMP_PERIODIC
-	k_delayed_work_init(&heap_task.work, diag_task);
-	k_delayed_work_submit(&heap_task.work,
+	k_work_init_delayable(&heap_task.work, diag_task);
+	k_work_reschedule(&heap_task.work,
 		K_MSEC(CONFIG_NRF_MODEM_LIB_HEAP_DUMP_PERIOD_MS));
 #endif
 }

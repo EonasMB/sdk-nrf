@@ -202,6 +202,51 @@ Curabitur nisl |sapien|, posuere auctor metus et, convallis varius turpis. Sed e
 
 .. |sapien| replace:: some Latin word
 
+Reuse
+*****
+
+To reuse text from the same or another file in the same doc set:
+
+Include 1:
+  .. include:: cheat_sheet.rst
+     :start-line: 19
+     :end-line: 27
+
+Include 2:
+  .. include:: ../gs_installing.rst
+     :start-after: west-error-start
+     :end-before: west-error-end
+
+To reuse text from another doc set:
+
+Include 3:
+  .. ncs-include:: getting_started/installation_win.rst
+     :docset: zephyr
+     :auto-dedent:
+     :start-line: 10
+     :end-line: 18
+
+Include 4:
+  .. ncs-include:: nfc/doc/type_2_tag.rst
+     :docset: nrfxlib
+     :auto-dedent:
+     :start-after: Version 1.0*.
+     :end-before: If you use the supplied library,
+
+You can also use ncs-include if you want to use the indentation options inside the nrf doc set:
+
+Include 5 (similar to include 2, but improved indentation):
+  .. ncs-include:: ../gs_installing.rst
+     :start-after: west-error-start
+     :end-before: west-error-end
+     :auto-dedent:
+
+See https://github.com/nrfconnect/sdk-nrf/commit/fa5bd7330538f6a12e059c9d60fa2696e48fcf3a for implementation and usage.
+
+.. tip::
+   If you need a "start-after" text that occurs more than once inside a document, you can combine ``:start-after:`` with ``:start-line:``.
+   Sphinx will then use the first occurrence of the "start-after" text after the specified start line.
+
 Including text inside a nested list
 ===================================
 
@@ -235,6 +280,7 @@ Another list which includes the steps from the previous list:
 
    d. substepB4
    #. substepB5
+
 
 Including code snippets in RST
 ******************************

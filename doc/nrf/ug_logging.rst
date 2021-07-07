@@ -114,7 +114,7 @@ For information about how to run SEGGER's J-Link RTT on your PC and see the logs
 Spinel
 ======
 
-Using `Spinel protocol`_ as a logging backend is specific to OpenThread's :ref:`thread_architectures_designs_cp_ncp` architecture.
+Using `Spinel protocol`_ as a logging backend is specific to OpenThread's :ref:`thread_architectures_designs_cp_ncp` and :ref:`thread_architectures_designs_cp_rcp` architectures.
 The Spinel protocol can be configured as a logging backend using the following Kconfig options:
 
 * :option:`CONFIG_LOG_BACKEND_SPINEL` - This option enables the Spinel logging backend.
@@ -122,11 +122,11 @@ The Spinel protocol can be configured as a logging backend using the following K
 
 To communicate using the Spinel protocol and gather logs, you need one of the following tools:
 
-* `PySpinel`_
+* `Pyspinel`_
 * :ref:`ug_thread_tools_wpantund`
 
 Each one of these tools accepts the ``-d <DEBUG_LEVEL>`` and ``--debug=<DEBUG_LEVEL>`` arguments, which can be used to display logging messages.
-See `PySpinel arguments`_ for an example if you are using PySpinel.
+See `Pyspinel arguments`_ for an example if you are using Pyspinel.
 Alternatively, see `wpantund Usage Overview`_ for information about how to change wpantund configuration file to avoid passing arguments manually every time.
 
 .. _ug_logging_backends_shell:

@@ -40,7 +40,7 @@ Syntax
   It indicates the MQTT Client password in cleartext.
 * The ``<url>`` parameter is a string.
   It indicates the MQTT broker hostname.
-* The ``<port>`` parameter is an integer.
+* The ``<port>`` parameter is an unsigned 16-bit integer (0 - 65535).
   It indicates the MQTT broker port.
 * The ``<sec_tag>`` parameter is an integer.
   It indicates the credential of the security tag used for establishing a secure connection.
@@ -103,7 +103,7 @@ Response syntax
   It indicates the MQTT Client password in cleartext.
 * The ``<url>`` value is a string.
   It indicates the MQTT broker hostname.
-* The ``<port>`` value is an integer.
+* The ``<port>`` value is an unsigned 16-bit integer (0 - 65535).
   It indicates the MQTT broker port.
 * The ``<sec_tag>`` value is an integer.
   It indicates the credential of the security tag used for establishing a secure connection.
@@ -184,7 +184,7 @@ If the MQTT client successfully subscribes to a topic, the following unsolicited
 
 * The ``<datatype>`` value can assume one of the following values:
 
-  * ``0`` - hexidecimal string (e.g. "DEADBEEF" for 0xDEADBEEF)
+  * ``0`` - hexadecimal string (e.g. "DEADBEEF" for 0xDEADBEEF)
   * ``1`` - plain text (default value)
 
 * The ``<topic_length>`` value is an integer.
@@ -299,15 +299,16 @@ Syntax
 
 ::
 
-   AT#XMQTTPUB=<topic>,<datatype>,<msg>,<qos>,<retain>
+   AT#XMQTTPUB=<topic>,<datatype>[,<msg>[,<qos>[,<retain>]]]
 
 
 * The ``<topic>`` parameter is a string.
   It indicates the topic on which data is published.
 * The ``<datatype>`` parameter can accept one of the following values:
 
-  * ``0`` - hexidecimal string (e.g. "DEADBEEF" for 0xDEADBEEF)
+  * ``0`` - hexadecimal string (e.g. "DEADBEEF" for 0xDEADBEEF)
   * ``1`` - plain text (default value)
+  * ``9`` - Arbitrary (enter data mode)
 
 * The ``<msg>`` parameter is a string.
   It contains the payload on the topic being published.
@@ -316,7 +317,7 @@ Syntax
   It indicates the MQTT Quality of Service types.
   It can accept the following values:
 
-  * ``0`` - Lowest Quality of Service.
+  * ``0`` - Lowest Quality of Service (default value).
     No acknowledgment of the reception is needed for the published message.
   * ``1`` - Medium Quality of Service.
     If the acknowledgment of the reception is expected for the published message, publishing duplicate messages is permitted.
@@ -324,6 +325,7 @@ Syntax
     The acknowledgment of the reception is expected and the message should be published only once.
 
 * The ``<retain>`` parameter is an integer.
+  Default value is  ``0``.
   When ``1``, it indicates that the broker should store the message persistently.
 
 Response syntax

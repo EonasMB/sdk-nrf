@@ -14,13 +14,20 @@
 
 #include <string.h>
 #include <bluetooth/mesh/model_types.h>
+#include <bluetooth/mesh/gen_dtt_srv.h>
+
+/**
+ * @brief Returns rounded division of @p A divided by @p B.
+ * @note Arguments are evaluated twice.
+ */
+#define ROUNDED_DIV(A, B) (((A) + ((B) / 2)) / (B))
 
 /** @brief Send a model message.
  *
  * Sends a model message with the given context. If the context is NULL, this
  * updates the publish message, and publishes with the configured parameters.
  *
- * @param mod Model to send on.
+ * @param model Model to send on.
  * @param ctx Context to send with, or NULL to publish on the configured
  * publish parameters.
  * @param buf Message to send.
@@ -32,7 +39,7 @@
  * not configured.
  * @retval -EAGAIN The device has not been provisioned.
  */
-int model_send(struct bt_mesh_model *mod, struct bt_mesh_msg_ctx *ctx,
+int model_send(struct bt_mesh_model *model, struct bt_mesh_msg_ctx *ctx,
 	       struct net_buf_simple *buf);
 
 /** @brief Send an acknowledged model message.
@@ -45,7 +52,7 @@ int model_send(struct bt_mesh_model *mod, struct bt_mesh_msg_ctx *ctx,
  * If a response context is provided, the call blocks for
  * 200 + TTL * 50 milliseconds, or until the acknowledgment is received.
  *
- * @param mod Model to send the message on.
+ * @param model Model to send the message on.
  * @param ctx Message context, or NULL to send with the configured publish
  * parameters.
  * @param buf Message to send.
@@ -62,64 +69,10 @@ int model_send(struct bt_mesh_model *mod, struct bt_mesh_msg_ctx *ctx,
  * @retval -EAGAIN The device has not been provisioned.
  * @retval -ETIMEDOUT The request timed out without a response.
  */
-int model_ackd_send(struct bt_mesh_model *mod, struct bt_mesh_msg_ctx *ctx,
+int model_ackd_send(struct bt_mesh_model *model, struct bt_mesh_msg_ctx *ctx,
 		    struct net_buf_simple *buf,
-		    struct bt_mesh_model_ack_ctx *ack, uint32_t rsp_op,
+		    struct bt_mesh_msg_ack_ctx *ack, uint32_t rsp_op,
 		    void *user_data);
-
-static inline void model_ack_init(struct bt_mesh_model_ack_ctx *ack)
-{
-	k_sem_init(&ack->sem, 0, 1);
-}
-
-static inline void model_ack_reset(struct bt_mesh_model_ack_ctx *ack)
-{
-	k_sem_reset(&ack->sem);
-}
-
-static inline int model_ack_ctx_prepare(struct bt_mesh_model_ack_ctx *ack,
-					uint32_t op, uint16_t dst, void *user_data)
-{
-	if (ack->op != 0) {
-		return -EALREADY;
-	}
-	ack->op = op;
-	ack->user_data = user_data;
-	ack->dst = dst;
-	return 0;
-}
-
-static inline bool model_ack_match(const struct bt_mesh_model_ack_ctx *ack_ctx,
-				   uint32_t op,
-				   const struct bt_mesh_msg_ctx *msg_ctx)
-{
-	return (ack_ctx->op == op &&
-		(ack_ctx->dst == msg_ctx->addr || ack_ctx->dst == 0));
-}
-
-static inline int model_ack_wait(struct bt_mesh_model_ack_ctx *ack,
-				 int32_t timeout)
-{
-	int status = k_sem_take(&ack->sem, K_MSEC(timeout));
-
-	ack->op = 0;
-	return status;
-}
-
-static inline bool model_ack_busy(struct bt_mesh_model_ack_ctx *ack)
-{
-	return (ack->op != 0);
-}
-
-static inline void model_ack_rx(struct bt_mesh_model_ack_ctx *ack)
-{
-	k_sem_give(&ack->sem);
-}
-
-static inline void model_ack_clear(struct bt_mesh_model_ack_ctx *ack)
-{
-	ack->op = 0;
-}
 
 /** @brief Compare the TID of an incoming message with the previous
  * transaction, and update it if it's new.
@@ -156,10 +109,21 @@ model_transition_buf_pull(struct net_buf_simple *buf,
 	transition->delay = model_delay_decode(net_buf_simple_pull_u8(buf));
 }
 
-static inline bool
-model_transition_is_active(const struct bt_mesh_model_transition *transition)
+static inline struct bt_mesh_model_transition *
+model_transition_get(struct bt_mesh_model *model,
+		     struct bt_mesh_model_transition *transition,
+		     struct net_buf_simple *buf)
 {
-	return (transition->time > 0 || transition->delay > 0);
+	if (buf->len == 2) {
+		model_transition_buf_pull(buf, transition);
+		return transition;
+	}
+
+	if (bt_mesh_dtt_srv_transition_get(model, transition)) {
+		return transition;
+	}
+
+	return NULL;
 }
 
 static inline bool
@@ -168,6 +132,15 @@ model_transition_is_invalid(const struct bt_mesh_model_transition *transition)
 	return (transition != NULL &&
 		(transition->time > BT_MESH_MODEL_TRANSITION_TIME_MAX_MS ||
 		 transition->delay > BT_MESH_MODEL_DELAY_TIME_MAX_MS));
+}
+
+static inline bool bt_mesh_model_is_extended(struct bt_mesh_model *model)
+{
+#ifdef CONFIG_BT_MESH_MODEL_EXTENSIONS
+	return model->next != NULL;
+#else
+	return false;
+#endif
 }
 
 #endif /* MODEL_UTILS_H__ */

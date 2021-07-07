@@ -35,10 +35,10 @@ struct rp_ll_endpoint;
 /** @brief Callback called from endpoint's rx thread when an asynchronous event
  * occurred.
  *
- * @param endpoint endpoint on which event was generated
- * @param event    type of event
- * @param buf      pointer to data buffer for RP_LL_EVENT_DATA event
- * @param length   length of @a buf
+ * @param endpoint  endpoint on which event was generated
+ * @param event     type of event
+ * @param buf       pointer to data buffer for RP_LL_EVENT_DATA event
+ * @param length    length of @a buf
  */
 typedef void (*rp_ll_event_handler)(struct rp_ll_endpoint *endpoint,
 	enum rp_ll_event_type event, const uint8_t *buf, size_t length);
@@ -63,27 +63,27 @@ void rp_ll_uninit(void);
 
 /** @brief Initializes an endpoint
  *
- * @param endpoint        endpoint to initialize
- * @param endpoint_number identification of the endpoint
- * @param callback        callback called from rx thread to inform about new
- *                        packets or a success or a failure of connection
- *                        process
- * @param user_data       transparent data pointer for @a callback
+ * @param endpoint         endpoint to initialize
+ * @param endpoint_number  identification of the endpoint
+ * @param callback         callback called from rx thread to inform about new
+ *                         packets or a success or a failure of connection
+ *                         process
+ * @param user_data        transparent data pointer for @a callback
  */
 int rp_ll_endpoint_init(struct rp_ll_endpoint *endpoint,
 	int endpoint_number, rp_ll_event_handler callback, void *user_data);
 
 /** @brief Uninitializes endpoint
  *
- * @param endpoint endpoint to uninitialize
+ * @param endpoint  endpoint to uninitialize
  */
 void rp_ll_endpoint_uninit(struct rp_ll_endpoint *endpoint);
 
 /** @brief Sends a packet via specified endpoint.
  *
- * @param endpoint endpoint to use
- * @param buf      data buffer to send
- * @param buf_len  size of @a buf
+ * @param endpoint  endpoint to use
+ * @param buf       data buffer to send
+ * @param buf_len   size of @a buf
  */
 int rp_ll_send(struct rp_ll_endpoint *endpoint, const uint8_t *buf,
 	       size_t buf_len);

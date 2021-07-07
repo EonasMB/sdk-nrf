@@ -10,6 +10,9 @@
 #include <date_time.h>
 #include <event_manager.h>
 #include <drivers/gps.h>
+#if defined(CONFIG_NRF_CLOUD_PGPS) && defined(CONFIG_GPS_MODULE_PGPS_STORE_LOCATION)
+#include <net/nrf_cloud_pgps.h>
+#endif
 
 #define MODULE gps_module
 
@@ -22,10 +25,7 @@
 #include <logging/log.h>
 LOG_MODULE_REGISTER(MODULE, CONFIG_GPS_MODULE_LOG_LEVEL);
 
-/* Maximum GPS interval value. Dummy value, will not be used. Starting
- * and stopping of GPS is done by the application.
- */
-#define GPS_INTERVAL_MAX 1800
+#define GPS_TIMEOUT_DEFAULT 60
 
 struct gps_msg_data {
 	union {
@@ -54,22 +54,25 @@ static const struct device *gps_dev;
 
 /* nRF9160 GPS driver configuration. */
 static struct gps_config gps_cfg = {
-	.nav_mode = GPS_NAV_MODE_PERIODIC,
+	.nav_mode = GPS_NAV_MODE_SINGLE_FIX,
 	.power_mode = GPS_POWER_MODE_DISABLED,
-	.interval = GPS_INTERVAL_MAX
+	.interval = 0,
+	.timeout = GPS_TIMEOUT_DEFAULT
 };
 
 static struct module_data self = {
 	.name = "gps",
 	.msg_q = NULL,
+	.supports_shutdown = true,
 };
 
 /* Forward declarations. */
 static void message_handler(struct gps_msg_data *data);
 static void search_start(void);
-static void search_stop(void);
+static void inactive_send(void);
 static void time_set(struct gps_pvt *gps_data);
-static void data_send(struct gps_pvt *gps_data);
+static void data_send_pvt(struct gps_pvt *gps_data);
+static void data_send_nmea(struct gps_nmea *gps_data);
 
 /* Convenience functions used in internal state handling. */
 static char *state2str(enum state_type new_state)
@@ -180,7 +183,9 @@ static void gps_event_handler(const struct device *dev, struct gps_event *evt)
 	case GPS_EVT_SEARCH_TIMEOUT:
 		LOG_DBG("GPS_EVT_SEARCH_TIMEOUT");
 		SEND_EVENT(gps, GPS_EVT_TIMEOUT);
-		search_stop();
+
+		/* Wrap sending of GPS_EVT_INACTIVE to avoid macro redefinition errors. */
+		inactive_send();
 		break;
 	case GPS_EVT_PVT:
 		/* Don't spam logs */
@@ -188,14 +193,25 @@ static void gps_event_handler(const struct device *dev, struct gps_event *evt)
 	case GPS_EVT_PVT_FIX:
 		LOG_DBG("GPS_EVT_PVT_FIX");
 		time_set(&evt->pvt);
-		data_send(&evt->pvt);
-		search_stop();
+		inactive_send();
+
+#if defined(CONFIG_NRF_CLOUD_PGPS) && defined(CONFIG_GPS_MODULE_PGPS_STORE_LOCATION)
+		nrf_cloud_pgps_set_location(evt->pvt.latitude, evt->pvt.longitude);
+#endif
+
+		if (IS_ENABLED(CONFIG_GPS_MODULE_PVT)) {
+			data_send_pvt(&evt->pvt);
+		}
+		break;
+	case GPS_EVT_NMEA_FIX:
+		LOG_DBG("GPS_EVT_NMEA_FIX");
+
+		if (IS_ENABLED(CONFIG_GPS_MODULE_NMEA)) {
+			data_send_nmea(&evt->nmea);
+		}
 		break;
 	case GPS_EVT_NMEA:
 		/* Don't spam logs */
-		break;
-	case GPS_EVT_NMEA_FIX:
-		LOG_DBG("Position fix with NMEA data");
 		break;
 	case GPS_EVT_OPERATION_BLOCKED:
 		LOG_DBG("GPS_EVT_OPERATION_BLOCKED");
@@ -221,18 +237,34 @@ static void gps_event_handler(const struct device *dev, struct gps_event *evt)
 }
 
 /* Static module functions. */
-static void data_send(struct gps_pvt *gps_data)
+static void data_send_pvt(struct gps_pvt *gps_data)
 {
 	struct gps_module_event *gps_module_event = new_gps_module_event();
 
-	gps_module_event->data.gps.longitude = gps_data->longitude;
-	gps_module_event->data.gps.latitude = gps_data->latitude;
-	gps_module_event->data.gps.altitude = gps_data->altitude;
-	gps_module_event->data.gps.accuracy = gps_data->accuracy;
-	gps_module_event->data.gps.speed = gps_data->speed;
-	gps_module_event->data.gps.heading = gps_data->heading;
+	gps_module_event->data.gps.pvt.longitude = gps_data->longitude;
+	gps_module_event->data.gps.pvt.latitude = gps_data->latitude;
+	gps_module_event->data.gps.pvt.altitude = gps_data->altitude;
+	gps_module_event->data.gps.pvt.accuracy = gps_data->accuracy;
+	gps_module_event->data.gps.pvt.speed = gps_data->speed;
+	gps_module_event->data.gps.pvt.heading = gps_data->heading;
 	gps_module_event->data.gps.timestamp = k_uptime_get();
 	gps_module_event->type = GPS_EVT_DATA_READY;
+	gps_module_event->data.gps.format = GPS_MODULE_DATA_FORMAT_PVT;
+
+	EVENT_SUBMIT(gps_module_event);
+}
+
+static void data_send_nmea(struct gps_nmea *gps_data)
+{
+	struct gps_module_event *gps_module_event = new_gps_module_event();
+
+	strncpy(gps_module_event->data.gps.nmea, gps_data->buf,
+		sizeof(gps_module_event->data.gps.nmea) - 1);
+
+	gps_module_event->data.gps.nmea[sizeof(gps_module_event->data.gps.nmea) - 1] = '\0';
+	gps_module_event->data.gps.timestamp = k_uptime_get();
+	gps_module_event->type = GPS_EVT_DATA_READY;
+	gps_module_event->data.gps.format = GPS_MODULE_DATA_FORMAT_NMEA;
 
 	EVENT_SUBMIT(gps_module_event);
 }
@@ -250,16 +282,8 @@ static void search_start(void)
 	SEND_EVENT(gps, GPS_EVT_ACTIVE);
 }
 
-static void search_stop(void)
+static void inactive_send(void)
 {
-	int err;
-
-	err = gps_stop(gps_dev);
-	if (err) {
-		LOG_WRN("Failed to stop GPS, error: %d", err);
-		return;
-	}
-
 	SEND_EVENT(gps, GPS_EVT_INACTIVE);
 }
 
@@ -370,7 +394,12 @@ static void on_all_states(struct gps_msg_data *msg)
 	if (IS_EVENT(msg, app, APP_EVT_START)) {
 		int err;
 
-		module_start(&self);
+		err = module_start(&self);
+		if (err) {
+			LOG_ERR("Failed starting module, error: %d", err);
+			SEND_ERROR(gps, GPS_EVT_ERROR, err);
+		}
+
 		state_set(STATE_INIT);
 
 		err = setup();
@@ -384,7 +413,7 @@ static void on_all_states(struct gps_msg_data *msg)
 		/* The module doesn't have anything to shut down and can
 		 * report back immediately.
 		 */
-		SEND_EVENT(gps, GPS_EVT_SHUTDOWN_READY);
+		SEND_SHUTDOWN_ACK(gps, GPS_EVT_SHUTDOWN_READY, self.id);
 		state_set(STATE_SHUTDOWN);
 	}
 }

@@ -12,7 +12,7 @@
  * @defgroup modem_module_event Modem module event
  * @{
  */
-
+#include <net/net_ip.h>
 #include "event_manager.h"
 
 #ifdef __cplusplus
@@ -67,19 +67,28 @@ struct modem_module_static_modem_data {
 	uint16_t nw_mode_gps;
 	uint16_t nw_mode_ltem;
 	uint16_t nw_mode_nbiot;
-	char *iccid;
-	char *app_version;
-	const char *board_version;
-	char *modem_fw;
+	char iccid[23];
+	char app_version[CONFIG_ASSET_TRACKER_V2_APP_VERSION_MAX_LEN];
+	char board_version[30];
+	char modem_fw[40];
 };
 
 struct modem_module_dynamic_modem_data {
 	int64_t timestamp;
 	uint16_t area_code;
-	uint16_t cell_id;
+	uint32_t cell_id;
 	uint16_t rsrp;
-	char *ip_address;
-	char *mccmnc;
+	char ip_address[INET6_ADDRSTRLEN];
+	char mccmnc[7];
+
+	/* Flags to signify if the corresponding data value has been updated and is concidered
+	 * fresh.
+	 */
+	bool area_code_fresh	: 1;
+	bool cell_id_fresh	: 1;
+	bool rsrp_fresh		: 1;
+	bool ip_address_fresh	: 1;
+	bool mccmnc_fresh	: 1;
 };
 
 struct modem_module_battery_data {
@@ -98,6 +107,8 @@ struct modem_module_event {
 		struct modem_module_cell cell;
 		struct modem_module_psm psm;
 		struct modem_module_edrx edrx;
+		/* Module ID, used when acknowledging shutdown requests. */
+		uint32_t id;
 		int err;
 	} data;
 };

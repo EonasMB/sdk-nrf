@@ -19,10 +19,10 @@ LOG_MODULE_REGISTER(MODULE, CONFIG_DESKTOP_CONFIG_CHANNEL_LOG_LEVEL);
 
 static int frame_length_check(size_t length)
 {
+	BUILD_ASSERT(TRANSPORT_HEADER_SIZE < REPORT_SIZE_USER_CONFIG);
+
 	const size_t min_size = TRANSPORT_HEADER_SIZE;
 	const size_t max_size = REPORT_SIZE_USER_CONFIG;
-
-	BUILD_ASSERT(min_size < max_size);
 
 	if ((length < min_size) || (length > max_size)) {
 		LOG_WRN("Unsupported report length %zu", length);
@@ -34,10 +34,10 @@ static int frame_length_check(size_t length)
 
 static int data_len_check(size_t event_data_len)
 {
+	BUILD_ASSERT(TRANSPORT_HEADER_SIZE < REPORT_SIZE_USER_CONFIG);
+
 	const size_t min_size = TRANSPORT_HEADER_SIZE;
 	const size_t max_size = REPORT_SIZE_USER_CONFIG;
-
-	BUILD_ASSERT(min_size < max_size);
 
 	if (event_data_len > max_size - min_size) {
 		LOG_WRN("Unsupported event data length %" PRIu8,
@@ -178,7 +178,7 @@ void config_channel_transport_init(struct config_channel_transport *transport)
 
 	__ASSERT_NO_MSG(transport->state == CONFIG_CHANNEL_TRANSPORT_DISABLED);
 	transport->state = CONFIG_CHANNEL_TRANSPORT_IDLE;
-	k_delayed_work_init(&transport->timeout, timeout_fn);
+	k_work_init_delayable(&transport->timeout, timeout_fn);
 }
 
 int config_channel_transport_get(struct config_channel_transport *transport,
@@ -205,13 +205,13 @@ int config_channel_transport_set(struct config_channel_transport *transport,
 	__ASSERT_NO_MSG(transport->state != CONFIG_CHANNEL_TRANSPORT_DISABLED);
 
 	if (transport->state == CONFIG_CHANNEL_TRANSPORT_WAIT_RSP) {
-		LOG_WRN("Transport %p busy", transport);
+		LOG_WRN("Transport %p busy", (void *)transport);
 		return -EBUSY;
 	}
 
 	if (transport->state == CONFIG_CHANNEL_TRANSPORT_RSP_READY) {
 		LOG_WRN("Host ignored previous response (transport: %p)",
-			transport);
+			(void *)transport);
 	}
 
 	struct config_event *event =
@@ -229,8 +229,8 @@ int config_channel_transport_set(struct config_channel_transport *transport,
 	event->is_request = true;
 	EVENT_SUBMIT(event);
 
-	k_delayed_work_submit(&transport->timeout,
-			      K_SECONDS(CONFIG_DESKTOP_CONFIG_CHANNEL_TIMEOUT));
+	BUILD_ASSERT(CONFIG_DESKTOP_CONFIG_CHANNEL_TIMEOUT > 0, "");
+	k_work_reschedule(&transport->timeout, K_SECONDS(CONFIG_DESKTOP_CONFIG_CHANNEL_TIMEOUT));
 
 	/* Store the data to send it as pending response. */
 	fill_response_pending(transport->data);
@@ -262,7 +262,12 @@ bool config_channel_transport_rsp_receive(struct config_channel_transport *trans
 	ARG_UNUSED(pos);
 
 	transport->state = CONFIG_CHANNEL_TRANSPORT_RSP_READY;
-	k_delayed_work_cancel(&transport->timeout);
+
+	int err = k_work_cancel_delayable(&transport->timeout);
+
+	__ASSERT_NO_MSG(!err);
+	ARG_UNUSED(err);
+
 	return true;
 }
 
@@ -275,5 +280,9 @@ void config_channel_transport_disconnect(struct config_channel_transport *transp
 		drop_transactions(transport);
 	}
 	transport->state = CONFIG_CHANNEL_TRANSPORT_IDLE;
-	k_delayed_work_cancel(&transport->timeout);
+
+	int err = k_work_cancel_delayable(&transport->timeout);
+
+	__ASSERT_NO_MSG(!err);
+	ARG_UNUSED(err);
 }

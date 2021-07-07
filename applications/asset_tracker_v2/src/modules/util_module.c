@@ -5,7 +5,7 @@
  */
 
 #include <zephyr.h>
-#include <power/reboot.h>
+#include <sys/reboot.h>
 #include <logging/log.h>
 
 #define MODULE util_module
@@ -41,16 +41,18 @@ static enum state_type {
 	STATE_REBOOT_PENDING
 } state;
 
-static struct k_delayed_work reboot_work;
+/* Forward declarations. */
+static void reboot_work_fn(struct k_work *work);
+static void message_handler(struct util_msg_data *msg);
+static void send_reboot_request(enum shutdown_reason reason);
+
+/* Delayed work that is used to trigger a reboot. */
+static K_WORK_DELAYABLE_DEFINE(reboot_work, reboot_work_fn);
 
 static struct module_data self = {
 	.name = "util",
 	.msg_q = NULL,
 };
-
-/* Forward declarations. */
-static void message_handler(struct util_msg_data *msg);
-static void send_reboot_request(void);
 
 /* Convenience functions used in internal state handling. */
 static char *state2str(enum state_type new_state)
@@ -151,7 +153,7 @@ static bool event_handler(const struct event_header *eh)
 
 void bsd_recoverable_error_handler(uint32_t err)
 {
-	send_reboot_request();
+	send_reboot_request(REASON_GENERIC);
 }
 
 void k_sys_fatal_error_handler(unsigned int reason, const z_arch_esf_t *esf)
@@ -159,7 +161,7 @@ void k_sys_fatal_error_handler(unsigned int reason, const z_arch_esf_t *esf)
 	ARG_UNUSED(esf);
 
 	LOG_PANIC();
-	send_reboot_request();
+	send_reboot_request(REASON_GENERIC);
 }
 
 /* Static module functions. */
@@ -181,7 +183,7 @@ static void reboot_work_fn(struct k_work *work)
 	reboot();
 }
 
-static void send_reboot_request(void)
+static void send_reboot_request(enum shutdown_reason reason)
 {
 	/* Flag ensuring that multiple reboot requests are not emitted
 	 * upon an error from multiple modules.
@@ -193,133 +195,123 @@ static void send_reboot_request(void)
 				new_util_module_event();
 
 		util_module_event->type = UTIL_EVT_SHUTDOWN_REQUEST;
+		util_module_event->reason = reason;
 
-		k_delayed_work_submit(&reboot_work,
+		k_work_reschedule(&reboot_work,
 				      K_SECONDS(CONFIG_REBOOT_TIMEOUT));
 
 		EVENT_SUBMIT(util_module_event);
 
+		state_set(STATE_REBOOT_PENDING);
+
 		error_signaled = true;
+	}
+}
+
+/* This API should be called exactly once for each _SHUTDOWN_READY event received from active
+ * modules in the application. When this API has been called a set number of times equal to the
+ * number of active modules, a reboot will be scheduled.
+ */
+static void reboot_ack_check(uint32_t module_id)
+{
+	/* Reboot after a shorter timeout if all modules have acknowledged that they are ready
+	 * to reboot, ensuring a graceful shutdown. If not all modules respond to the shutdown
+	 * request, the application will be shut down after a longer duration scheduled upon the
+	 * initial error event.
+	 */
+	if (modules_shutdown_register(module_id)) {
+		LOG_WRN("All modules have ACKed the reboot request.");
+		LOG_WRN("Reboot in 5 seconds.");
+		k_work_reschedule(&reboot_work, K_SECONDS(5));
+	}
+}
+
+/* Message handler for STATE_INIT. */
+static void on_state_init(struct util_msg_data *msg)
+{
+	if (IS_EVENT(msg, cloud,  CLOUD_EVT_FOTA_DONE)) {
+		send_reboot_request(REASON_FOTA_UPDATE);
+	}
+
+	if ((IS_EVENT(msg, cloud,  CLOUD_EVT_ERROR))	 ||
+	    (IS_EVENT(msg, modem,  MODEM_EVT_ERROR))	 ||
+	    (IS_EVENT(msg, sensor, SENSOR_EVT_ERROR))	 ||
+	    (IS_EVENT(msg, gps,	   GPS_EVT_ERROR_CODE))	 ||
+	    (IS_EVENT(msg, data,   DATA_EVT_ERROR))	 ||
+	    (IS_EVENT(msg, app,	   APP_EVT_ERROR))	 ||
+	    (IS_EVENT(msg, ui,	   UI_EVT_ERROR))) {
+		send_reboot_request(REASON_GENERIC);
+		return;
+	}
+}
+
+/* Message handler for STATE_REBOOT_PENDING. */
+static void on_state_reboot_pending(struct util_msg_data *msg)
+{
+	if (IS_EVENT(msg, cloud, CLOUD_EVT_SHUTDOWN_READY)) {
+		reboot_ack_check(msg->module.cloud.data.id);
+		return;
+	}
+
+	if (IS_EVENT(msg, modem, MODEM_EVT_SHUTDOWN_READY)) {
+		reboot_ack_check(msg->module.modem.data.id);
+		return;
+	}
+
+	if (IS_EVENT(msg, sensor, SENSOR_EVT_SHUTDOWN_READY)) {
+		reboot_ack_check(msg->module.sensor.data.id);
+		return;
+	}
+
+	if (IS_EVENT(msg, gps, GPS_EVT_SHUTDOWN_READY)) {
+		reboot_ack_check(msg->module.gps.data.id);
+		return;
+	}
+
+	if (IS_EVENT(msg, data, DATA_EVT_SHUTDOWN_READY)) {
+		reboot_ack_check(msg->module.data.data.id);
+		return;
+	}
+
+	if (IS_EVENT(msg, app, APP_EVT_SHUTDOWN_READY)) {
+		reboot_ack_check(msg->module.app.data.id);
+		return;
+	}
+
+	if (IS_EVENT(msg, ui, UI_EVT_SHUTDOWN_READY)) {
+		reboot_ack_check(msg->module.ui.data.id);
+		return;
 	}
 }
 
 /* Message handler for all states. */
 static void on_all_states(struct util_msg_data *msg)
 {
-	static int reboot_ack_cnt;
+	if (IS_EVENT(msg, app, APP_EVT_START)) {
+		int err = module_start(&self);
 
-	if (is_cloud_module_event(&msg->module.cloud.header)) {
-		switch (msg->module.cloud.type) {
-		case CLOUD_EVT_ERROR:
-			/* Fall through. */
-		case CLOUD_EVT_FOTA_DONE:
-			send_reboot_request();
-			break;
-		case CLOUD_EVT_SHUTDOWN_READY:
-			reboot_ack_cnt++;
-			break;
-		default:
-			break;
+		if (err) {
+			LOG_ERR("Failed starting module, error: %d", err);
+			send_reboot_request(REASON_GENERIC);
 		}
-	}
 
-	if (is_modem_module_event(&msg->module.modem.header)) {
-		switch (msg->module.modem.type) {
-		case MODEM_EVT_ERROR:
-			send_reboot_request();
-			break;
-		case MODEM_EVT_SHUTDOWN_READY:
-			reboot_ack_cnt++;
-			break;
-		default:
-			break;
-		}
-	}
-
-	if (is_sensor_module_event(&msg->module.sensor.header)) {
-		switch (msg->module.sensor.type) {
-		case SENSOR_EVT_ERROR:
-			send_reboot_request();
-			break;
-		case SENSOR_EVT_SHUTDOWN_READY:
-			reboot_ack_cnt++;
-			break;
-		default:
-			break;
-		}
-	}
-
-	if (is_gps_module_event(&msg->module.gps.header)) {
-		switch (msg->module.gps.type) {
-		case GPS_EVT_ERROR_CODE:
-			send_reboot_request();
-			break;
-		case GPS_EVT_SHUTDOWN_READY:
-			reboot_ack_cnt++;
-			break;
-		default:
-			break;
-		}
-	}
-
-	if (is_data_module_event(&msg->module.data.header)) {
-		switch (msg->module.data.type) {
-		case DATA_EVT_ERROR:
-			send_reboot_request();
-			break;
-		case DATA_EVT_SHUTDOWN_READY:
-			reboot_ack_cnt++;
-			break;
-		default:
-			break;
-		}
-	}
-
-	if (is_app_module_event(&msg->module.app.header)) {
-		switch (msg->module.app.type) {
-		case APP_EVT_ERROR:
-			send_reboot_request();
-			break;
-		case APP_EVT_SHUTDOWN_READY:
-			reboot_ack_cnt++;
-			break;
-		default:
-			break;
-		}
-	}
-
-	if (is_ui_module_event(&msg->module.ui.header)) {
-		switch (msg->module.ui.type) {
-		case UI_EVT_ERROR:
-			send_reboot_request();
-			break;
-		case UI_EVT_SHUTDOWN_READY:
-			reboot_ack_cnt++;
-			break;
-		default:
-			break;
-		}
-	}
-
-	/* Reboot if after a shorter timeout if all modules has acknowledged
-	 * that the application is ready to shutdown. This ensures a graceful
-	 * shutdown.
-	 */
-	if (reboot_ack_cnt >= module_active_count_get() - 1) {
-		LOG_WRN("All modules have ACKed the reboot request.");
-		LOG_WRN("Reboot in 5 seconds.");
-		k_delayed_work_submit(&reboot_work, K_SECONDS(5));
+		state_set(STATE_INIT);
 	}
 }
 
 static void message_handler(struct util_msg_data *msg)
 {
-	if (IS_EVENT(msg, app, APP_EVT_START)) {
-		module_start(&self);
-		state_set(STATE_INIT);
-		k_delayed_work_init(&reboot_work, reboot_work_fn);
+	switch (state) {
+	case STATE_INIT:
+		on_state_init(msg);
+		break;
+	case STATE_REBOOT_PENDING:
+		on_state_reboot_pending(msg);
+		break;
+	default:
+		LOG_WRN("Unknown utility module state.");
+		break;
 	}
-
 
 	on_all_states(msg);
 }

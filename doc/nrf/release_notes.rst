@@ -10,7 +10,7 @@ This page is included only in the latest documentation, because it might contain
 
 .. note::
    A "99" at the end of the version number of this documentation indicates continuous updates on the master branch since the previous major.minor release.
-   When looking at this latest documentation, be aware of the following aspects:
+   When looking at this latest documentation, be aware of the following:
 
    * The release note pages that are available in the latest documentation might differ slightly from the release notes that were included in the respective |NCS| release at its release date.
      Therefore, to see the official version of the release notes for a specific |NCS| release, switch to the documentation for the corresponding |NCS| version using the selector in the upper left-hand corner.
@@ -19,6 +19,7 @@ This page is included only in the latest documentation, because it might contain
    :maxdepth: 1
    :caption: Subpages:
 
+   releases/release-notes-1.6.0
    releases/release-notes-1.5.1
    releases/release-notes-1.5.0
    releases/release-notes-1.4.2

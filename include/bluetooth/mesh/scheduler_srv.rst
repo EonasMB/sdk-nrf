@@ -143,13 +143,21 @@ Each entry has the following fields:
 Extended models
 ***************
 
-The Scheduler Server extends the :ref:`bt_mesh_scene_srv_readme`.
-In addition, the Scheduler Setup Server extends the Scene Setup Server (see the :ref:`bt_mesh_scene_srv_readme` documentation) and the Generic Power OnOff Setup Server (see the :ref:`bt_mesh_ponoff_srv_readme` documentation).
+The Scheduler Server is implemented as a root model.
+When a Scheduler Server model is present on an element, the Scene Server model (see the :ref:`bt_mesh_scene_srv_readme` documentation) shall also be present on the same element.
 
 Persistent storage
 ******************
 
-None
+The Scheduler Server stores the following information:
+
+* Any changes to the Schedule Register state
+
+This information is used to restore previously configured register entries when the device powers up.
+
+The scheduler operation depends on the availability of the updated current time provided by the Time Server.
+It is the application's responsibility to call :c:func:`bt_mesh_scheduler_srv_time_update` after the current local
+time has been updated to schedule available entries correctly.
 
 API documentation
 *****************

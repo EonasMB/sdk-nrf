@@ -92,7 +92,7 @@ This is demonstrated by the following code:
        - name: nrf
          repo-path: sdk-nrf
          remote: ncs
-         revision: v1.5.1
+         revision: v1.6.0
          import: true
      self:
        path: application
@@ -109,7 +109,7 @@ For example:
 .. code-block:: yaml
 
    # Example your-application/west.yml, using manifest imports, with
-   # an NCS fork and a separate module
+   # an nRF Connect SDK fork and a separate module
    manifest:
      remotes:
        - name: ncs
@@ -119,13 +119,13 @@ For example:
      projects:
        - name: nrf
          remote: ncs
-         revision: v1.5.1
+         revision: v1.6.0
          import: true
-       # Example for how to override a repository in the NCS with your own:
+       # Example for how to override a repository in the nRF Connect SDK with your own:
        - name: mcuboot
          remote: your-remote
          revision: your-mcuboot-fork-SHA-or-branch
-       # Example for how to add a repository not in NCS:
+       # Example for how to add a repository not in nRF Connect SDK:
        - name: your-custom-library
          remote: your-remote
          revision: your-library-SHA-or-branch
@@ -146,4 +146,4 @@ You just need to replace ``sdk-nrf`` and ``nrf`` with the repository name and pa
    west update
 
 After that, to modify the |NCS| version associated with your app, change the ``revision`` value in the manifest file to the `sdk-nrf`_ Git tag, SHA, or the branch you want to use, save the file, and run ``west update``.
-See :ref:`zephyr:west-multi-repo` for more details.
+See :ref:`zephyr:west-basics` for more details.

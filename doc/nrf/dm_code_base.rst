@@ -31,7 +31,7 @@ When you create a GitHub fork, GitHub copies the original repository and tags th
 GitHub also supports creating forks without linking them to the upstream respository.
 See the `GitHub documentation <GitHub duplicate_>`_ for information about how to do this.
 
-.. _dm-repo-types:
+.. _dm_repo_types:
 
 Repository types
 ****************
@@ -70,7 +70,7 @@ You can learn more about the reasons behind the introduction of west in :ref:`th
 
 A :ref:`manifest repository <zephyr:west-manifests>`, `sdk-nrf`_, contains a file in its root folder, :file:`west.yml`, which lists all other repositories (west projects) included in the |NCS|.
 The |NCS| repository structure has a star topology, with the `sdk-nrf`_ repository being the center of the star and all other repositories being west projects that are managed by :file:`west.yml`.
-This is equivalent to topology T2 in the :ref:`west documentation <zephyr:west-multi-repo>`.
+This is equivalent to topology T2 in the :ref:`west documentation <zephyr:west-basics>`.
 
 .. figure:: images/ncs-west-repos.png
    :alt: A graphical depiction of the |NCS| repository structure
@@ -121,7 +121,7 @@ These are identified by a ``-devN`` suffix.
 OSS repositories downstream project history
 *******************************************
 
-As described in :ref:`dm-repo-types`, the |NCS| contains OSS repositories, which are based on third-party, open-source Git repositories and may contain additional patches not present upstream.
+As described in :ref:`dm_repo_types`, the |NCS| contains OSS repositories, which are based on third-party, open-source Git repositories and may contain additional patches not present upstream.
 Examples include `sdk-zephyr`_ and `sdk-mcuboot`_, which have upstream open-source projects used as a basis for downstream repositories distributed with the |NCS|.
 This section describes how the history of these OSS repositories is maintained, and how they are synchronized with their upstreams.
 

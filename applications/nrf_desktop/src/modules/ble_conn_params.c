@@ -13,7 +13,8 @@
 #endif /* CONFIG_BT_LL_SOFTDEVICE */
 
 #define MODULE ble_conn_params
-#include "module_state_event.h"
+#include <caf/events/module_state_event.h>
+#include <caf/events/ble_common_event.h>
 #include "ble_event.h"
 
 #include <logging/log.h>
@@ -21,7 +22,7 @@ LOG_MODULE_REGISTER(MODULE, CONFIG_DESKTOP_BLE_CONN_PARAMS_LOG_LEVEL);
 
 #define CONN_INTERVAL_LLPM_US		1000   /* 1 ms */
 #define CONN_INTERVAL_LLPM_REG		0x0d01 /* 1 ms */
-#if (CONFIG_DESKTOP_BLE_USE_LLPM && (CONFIG_BT_MAX_CONN > 2))
+#if (CONFIG_CAF_BLE_USE_LLPM && (CONFIG_BT_MAX_CONN > 2))
  #define CONN_INTERVAL_BLE_REG		0x0008 /* 10 ms */
 #else
  #define CONN_INTERVAL_BLE_REG		0x0006 /* 7.5 ms */
@@ -38,7 +39,7 @@ struct connected_peer {
 };
 
 static struct connected_peer peers[CONFIG_BT_MAX_CONN];
-static struct k_delayed_work conn_params_update;
+static struct k_work_delayable conn_params_update;
 
 
 static struct connected_peer *find_connected_peer(const struct bt_conn *conn)
@@ -57,7 +58,7 @@ static int set_conn_params(struct bt_conn *conn, uint16_t conn_latency,
 {
 	int err;
 
-#ifdef CONFIG_DESKTOP_BLE_USE_LLPM
+#ifdef CONFIG_CAF_BLE_USE_LLPM
 	if (peer_llpm_support) {
 		struct net_buf *buf;
 		sdc_hci_cmd_vs_conn_update_t *cmd_conn_update;
@@ -85,7 +86,7 @@ static int set_conn_params(struct bt_conn *conn, uint16_t conn_latency,
 		err = bt_hci_cmd_send_sync(SDC_HCI_OPCODE_CMD_VS_CONN_UPDATE, buf,
 					   NULL);
 	} else
-#endif /* CONFIG_DESKTOP_BLE_USE_LLPM */
+#endif /* CONFIG_CAF_BLE_USE_LLPM */
 	{
 		struct bt_le_conn_param param = {
 			.interval_min = CONN_INTERVAL_BLE_REG,
@@ -123,14 +124,14 @@ static void update_peer_conn_params(const struct connected_peer *peer)
 
 	if (err) {
 		LOG_WRN("Cannot update conn parameters for peer %p (err:%d)",
-			peer, err);
+			(void *)peer, err);
 		/* Retry to update the connection parameters after an error. */
-		k_delayed_work_submit(&conn_params_update,
+		k_work_reschedule(&conn_params_update,
 				      CONN_PARAMS_ERROR_TIMEOUT);
 	} else {
 		LOG_INF("Conn params for peer: %p set: %s, latency: %"PRIu16,
-		  peer->conn,
-		  (IS_ENABLED(CONFIG_DESKTOP_BLE_USE_LLPM) && peer->llpm_support) ?
+		  (void *)peer->conn,
+		  (IS_ENABLED(CONFIG_CAF_BLE_USE_LLPM) && peer->llpm_support) ?
 		  "LLPM" : "BLE", latency);
 	}
 }
@@ -184,7 +185,7 @@ static void ble_peer_conn_params_event_handler(const struct ble_peer_conn_params
 
 	__ASSERT_NO_MSG(peer);
 	peer->requested_latency = event->latency;
-	k_delayed_work_submit(&conn_params_update, K_NO_WAIT);
+	k_work_reschedule(&conn_params_update, K_NO_WAIT);
 
 	LOG_INF("Request to update conn: %p latency to: %"PRIu16,
 		event->id, event->latency);
@@ -192,7 +193,7 @@ static void ble_peer_conn_params_event_handler(const struct ble_peer_conn_params
 
 static void init(void)
 {
-	k_delayed_work_init(&conn_params_update, conn_params_update_fn);
+	k_work_init_delayable(&conn_params_update, conn_params_update_fn);
 }
 
 static void peer_connected(struct bt_conn *conn)

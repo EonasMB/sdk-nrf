@@ -7,7 +7,8 @@ Thread: CLI
    :local:
    :depth: 2
 
-The :ref:`Thread <ug_thread>` CLI sample demonstrates the usage of OpenThread Command Line Interface inside the Zephyr shell.
+The :ref:`Thread <ug_thread>` CLI sample demonstrates how to send commands to a Thread device using the OpenThread Command Line Interface (CLI).
+The CLI is integrated into the Zephyr shell.
 
 This sample supports optional :ref:`ot_cli_sample_thread_v12`, which can be turned on or off.
 See :ref:`coap_client_sample_activating_variants` for details.
@@ -40,10 +41,10 @@ See `Testing diagnostic module`_ section for an example.
 
 .. _ot_cli_sample_thread_v12:
 
-Experimental Thread v1.2 extension
-==================================
+Experimental Thread 1.2 extension
+=================================
 
-This optional extension allows you to test :ref:`available features from Thread Specification v1.2 <thread_ug_thread_1_2>`.
+This optional extension allows you to test :ref:`available features from the Thread 1.2 Specification <thread_ug_thread_1_2>`.
 You can enable these features either by :ref:`activating the overlay extension <ot_cli_sample_activating_variants>` as described below or by setting :ref:`thread_ug_thread_1_2`.
 
 .. _ot_cli_sample_thread_certification:
@@ -82,10 +83,10 @@ The sample supports the following development kits for testing the network statu
 
 Optionally, you can use one or more compatible development kits programmed with this sample or another :ref:`Thread sample <openthread_samples>` for :ref:`testing communication or diagnostics <ot_cli_sample_testing_multiple>` and :ref:`thread_ot_commissioning_configuring_on-mesh`.
 
-Thread v1.2 extension requirements
-==================================
+Thread 1.2 extension requirements
+=================================
 
-If you enable the :ref:`experimental Thread v1.2 extension <ot_cli_sample_thread_v12>`, you will need `nRF Sniffer for 802.15.4 based on nRF52840 with Wireshark`_ to observe messages sent from the router to the leader kit when :ref:`testing v1.2 features <ot_cli_sample_testing_multiple_v12>`.
+If you enable the :ref:`ot_cli_sample_thread_v12`, you will need `nRF Sniffer for 802.15.4`_ to observe messages sent from the router to the leader kit when :ref:`ot_cli_sample_testing_multiple_v12`.
 
 User interface
 **************
@@ -255,12 +256,12 @@ To test diagnostic commands, complete the following steps:
 
 .. _ot_cli_sample_testing_multiple_v12:
 
-Testing Thread Specification v1.2 features
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Testing Thread 1.2 features
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-To test the Thread Specification v1.2 features, complete the following steps:
+To test the Thread 1.2 features, complete the following steps:
 
-#. Make sure both development kits are programmed with the CLI sample with the :ref:`Thread v1.2 extension <ot_cli_sample_thread_v12>` enabled.
+#. Make sure both development kits are programmed with the CLI sample with the :ref:`ot_cli_sample_thread_v12` enabled.
 #. Turn on the developments kits.
 #. Set up the serial connection with both development kits.
    For more details, see :ref:`putty`.
@@ -290,7 +291,7 @@ To test the Thread Specification v1.2 features, complete the following steps:
 
       uart:~$ ot prefix add fd00:7d03:7d03:7d03::/64 prosD med
       Done
-      uart:~$ ot netdataregister
+      uart:~$ ot netdata register
       Done
       I: State changed! Flags: 0x00000200 Current role: 4
       I: State changed! Flags: 0x00001001 Current role: 4
@@ -332,11 +333,132 @@ To test the Thread Specification v1.2 features, complete the following steps:
       ff03:0:0:0:0:0:0:fc
       Done
 
-   The router kit will send an ``MLR.req`` message to the leader kit (Backbone Router).
-   This can be observed using the `nRF Sniffer for 802.15.4 based on nRF52840 with Wireshark`_.
+   The router kit will send an ``MLR.req`` message and a ``DUA.req`` message to the leader kit (Backbone Router).
+   This can be observed using the `nRF Sniffer for 802.15.4`_.
 
-   .. note::
-        The DUA registration with the Backbone Router is not yet supported.
+#. On the leader kit, list the IPv6 addresses:
+
+   .. code-block:: console
+
+      uart:~$ ot ipaddr
+      fd00:7d03:7d03:7d03:84c9:572d:be24:cbe
+      fdde:ad00:beef:0:0:ff:fe00:fc10
+      fdde:ad00:beef:0:0:ff:fe00:fc38
+      fdde:ad00:beef:0:0:ff:fe00:fc00
+      fdde:ad00:beef:0:0:ff:fe00:7000
+      fdde:ad00:beef:0:a318:bf4f:b9c6:5f7d
+      fe80:0:0:0:10b1:93ea:c0ee:eeb7
+
+   Note down the link-local address.
+   You must use this address when sending Link Metrics commands from the router kit to the leader kit.
+
+   The following steps use the address ``fe80:0:0:0:10b1:93ea:c0ee:eeb7``.
+   Replace it with the link-local address of your leader kit in all commands.
+
+#. Run the following commands on the router kit:
+
+   a. Reattach the router kit as SED with a polling period of 3 seconds:
+
+      .. code-block:: console
+
+         uart:~$ ot pollperiod 3000
+         Done
+         uart:~$ ot mode -
+         Done
+
+   #. Perform a Link Metrics query (Single Probe):
+
+      .. code-block:: console
+
+         uart:~$ ot linkmetrics query fe80:0:0:0:10b1:93ea:c0ee:eeb7 single qmr
+         Done
+         Received Link Metrics Report from: fe80:0:0:0:10b1:93ea:c0ee:eeb7
+         - LQI: 220 (Exponential Moving Average)
+         - Margin: 60 (dB) (Exponential Moving Average)
+         - RSSI: -40 (dBm) (Exponential Moving Average)
+
+   #. Send a Link Metrics Management Request to configure a Forward Tracking Series:
+
+      .. code-block:: console
+
+         uart:~$ ot linkmetrics mgmt fe80:0:0:0:10b1:93ea:c0ee:eeb7 forward 1 dra pqmr
+         Done
+         Received Link Metrics Management Response from: fe80:0:0:0:10b1:93ea:c0ee:eeb7
+         Status: Success
+
+   #. Send an MLE Link Probe message to the peer:
+
+      .. code-block:: console
+
+         uart:~$ ot linkmetrics probe fe80:0:0:0:10b1:93ea:c0ee:eeb7 1 10
+         Done
+
+   #. Perform a Link Metrics query (Forward Tracking Series):
+
+      .. code-block:: console
+
+         uart:~$ ot linkmetrics query fe80:0:0:0:10b1:93ea:c0ee:eeb7 forward 1
+         Done
+         Received Link Metrics Report from: fe80:0:0:0:10b1:93ea:c0ee:eeb7
+         - PDU Counter: 13 (Count/Summation)
+         - LQI: 212 (Exponential Moving Average)
+         - Margin: 60 (dB) (Exponential Moving Average)
+         - RSSI: -40 (dBm) (Exponential Moving Average)
+
+   #. Send a Link Metrics Management Request to register an Enhanced ACK-based Probing:
+
+      .. code-block:: console
+
+         uart:~$ ot linkmetrics mgmt fe80:0:0:0:10b1:93ea:c0ee:eeb7 enhanced-ack register qm
+         Done
+         Received Link Metrics Management Response from: fe80:0:0:0:10b1:93ea:c0ee:eeb7
+         Status: Success
+
+   #. Send a Link Metrics Management Request to clear an Enhanced ACK-based Probing:
+
+      .. code-block:: console
+
+         uart:~$ ot linkmetrics mgmt fe80:0:0:0:10b1:93ea:c0ee:eeb7 enhanced-ack clear
+         Done
+         Received Link Metrics Management Response from: fe80:0:0:0:10b1:93ea:c0ee:eeb7
+         Status: Success
+
+#. Verify the Coordinated Sampled Listening (CSL) functionality.
+
+   The following steps use the address ``fe80:0:0:0:acbd:53bf:1461:a861``.
+   Replace it with the link-local address of your router kit in all commands.
+
+   a. Send an ICMPv6 Echo Request from the leader kit to link-local address of the router kit:
+
+      .. code-block:: console
+
+         uart:~$ ot ping fe80:0:0:0:acbd:53bf:1461:a861
+         16 bytes from fe80:0:0:0:acbd:53bf:1461:a861: icmp_seq=2 hlim=64 time=2494ms
+         1 packets transmitted, 1 packets received. Packet loss = 0.0%. Round-trip min/a
+         Done
+
+      Observe that there is a long latency on the reply of up to 3000 ms.
+      This is due to the indirect transmission mechanism based on data polling.
+
+   #. Enable a CSL Receiver on the router kit (now SED) by configuring a CSL period of 0.5 seconds:
+
+      .. code-block:: console
+
+         uart:~$ ot csl period 3125
+         Done
+
+   #. Send an ICMPv6 Echo Request from the leader kit to the link-local address of the router kit:
+
+      .. code-block:: console
+
+         uart:~$ ot ping fe80:0:0:0:acbd:53bf:1461:a861
+         uart:~$ W: TX_STARTED event will be triggered without delay
+         16 bytes from fe80:0:0:0:acbd:53bf:1461:a861: icmp_seq=3 hlim=64 time=421ms
+         1 packets transmitted, 1 packets received. Packet loss = 0.0%. Round-trip min/a
+         Done
+
+      Observe that the reply latency is reduced to a value below 500 ms.
+      The reduction occurs because the transmission from the leader is performed via CSL, based on the CSL Information Elements sent by the CSL Receiver.
 
 Dependencies
 ************

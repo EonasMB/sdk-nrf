@@ -6,7 +6,7 @@
 
 #include <stdio.h>
 #include <zephyr.h>
-#include <power/power.h>
+#include <pm/pm.h>
 
 #include <nrfx.h>
 #include <hal/nrf_power.h>
@@ -31,7 +31,7 @@
 
 
 /* Delayed work that enters system off. */
-static struct k_delayed_work system_off_work;
+static struct k_work_delayable system_off_work;
 
 
 /**
@@ -49,12 +49,12 @@ static void nfc_callback(void *context,
 	switch (event) {
 	case NFC_T2T_EVENT_FIELD_ON:
 		/* Cancel entering system off */
-		k_delayed_work_cancel(&system_off_work);
+		k_work_cancel_delayable(&system_off_work);
 		dk_set_led_on(NFC_FIELD_LED);
 		break;
 	case NFC_T2T_EVENT_FIELD_OFF:
 		/* Enter system off after delay */
-		k_delayed_work_submit(&system_off_work,
+		k_work_reschedule(&system_off_work,
 				K_SECONDS(SYSTEM_OFF_DELAY_S));
 		dk_set_led_off(NFC_FIELD_LED);
 		break;
@@ -137,7 +137,7 @@ static void system_off(struct k_work *work)
 	/* Before we disabled entry to deep sleep. Here we need to override
 	 * that, then force a sleep so that the deep sleep takes effect.
 	 */
-	pm_power_state_force(POWER_STATE_DEEP_SLEEP_1);
+	pm_power_state_force((struct pm_state_info){PM_STATE_SOFT_OFF, 0, 0});
 
 	dk_set_led_off(SYSTEM_ON_LED);
 
@@ -209,8 +209,8 @@ void main(void)
 	dk_set_led_on(SYSTEM_ON_LED);
 
 	/* Configure and start delayed work that enters system off */
-	k_delayed_work_init(&system_off_work, system_off);
-	k_delayed_work_submit(&system_off_work, K_SECONDS(SYSTEM_OFF_DELAY_S));
+	k_work_init_delayable(&system_off_work, system_off);
+	k_work_reschedule(&system_off_work, K_SECONDS(SYSTEM_OFF_DELAY_S));
 
 	/* Show last reset reason */
 	print_reset_reason();
@@ -222,7 +222,7 @@ void main(void)
 	}
 
 	/* Prevent deep sleep (system off) from being entered */
-	pm_ctrl_disable_state(POWER_STATE_DEEP_SLEEP_1);
+	pm_constraint_set(PM_STATE_SOFT_OFF);
 
 	/* Exit main function - the rest will be done by the callbacks */
 }

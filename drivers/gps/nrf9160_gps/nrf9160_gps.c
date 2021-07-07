@@ -58,9 +58,10 @@ struct gps_drv_data {
 	struct k_thread thread;
 	k_tid_t thread_id;
 	struct k_sem thread_run_sem;
-	struct k_delayed_work stop_work;
-	struct k_delayed_work timeout_work;
-	struct k_delayed_work blocked_work;
+	struct k_work stop_work;
+	struct k_work_delayable timeout_work;
+	struct k_work_delayable blocked_work;
+	struct k_work_sync work_sync;
 };
 
 struct nrf9160_gps_config {
@@ -75,6 +76,7 @@ struct nrf9160_gps_config {
 
 static int stop_gps(const struct device *dev, bool is_timeout);
 
+static uint64_t start_timestamp;
 static uint64_t fix_timestamp;
 
 static nrf_gnss_agps_data_type_t type_lookup_gps2socket[] = {
@@ -180,6 +182,17 @@ static void print_satellite_stats(nrf_gnss_data_frame_t *pvt_data)
 							n_unhealthy);
 	LOG_DBG("Seconds since last fix %lld",
 			(k_uptime_get() - fix_timestamp) / 1000);
+	if (fix_timestamp > start_timestamp) {
+		char buf[35];
+
+		snprintf(buf, sizeof(buf), "Seconds for this fix %.3f",
+			 (fix_timestamp - start_timestamp) / 1000.0F);
+		LOG_DBG("%s", log_strdup(buf));
+		LOG_DBG("%u:%02u:%02u.%03u %u/%u/%u", pvt_data->pvt.datetime.hour,
+			pvt_data->pvt.datetime.minute, pvt_data->pvt.datetime.seconds,
+			pvt_data->pvt.datetime.ms, pvt_data->pvt.datetime.day,
+			pvt_data->pvt.datetime.month, pvt_data->pvt.datetime.year);
+	}
 }
 
 static void notify_event(const struct device *dev, struct gps_event *evt)
@@ -207,10 +220,18 @@ static int open_socket(struct gps_drv_data *drv_data)
 	return 0;
 }
 
-static void cancel_works(struct gps_drv_data *drv_data)
+static void cancel_works(struct gps_drv_data *drv_data,
+			 bool wait_for_completion)
 {
-	k_delayed_work_cancel(&drv_data->timeout_work);
-	k_delayed_work_cancel(&drv_data->blocked_work);
+	if (wait_for_completion) {
+		k_work_cancel_delayable_sync(&drv_data->timeout_work,
+					&drv_data->work_sync);
+		k_work_cancel_delayable_sync(&drv_data->blocked_work,
+					&drv_data->work_sync);
+	} else {
+		k_work_cancel_delayable(&drv_data->timeout_work);
+		k_work_cancel_delayable(&drv_data->blocked_work);
+	}
 }
 
 static int gps_priority_set(struct gps_drv_data *drv_data, bool enable)
@@ -276,26 +297,30 @@ wait:
 		nrf_gnss_data_frame_t raw_gps_data = {0};
 		struct gps_event evt = {0};
 
-		/** There is no way of knowing if nrf_recv() blocks because the
-		 *  GPS timeout/retry value has expired or the GPS has gotten a
-		 *  fix. This check makes sure that a GPS_EVT_SEARCH_TIMEOUT is
-		 *  not propagated upon a fix.
+		/* There is no way of knowing if nrf_recv() blocks because the
+		 * GPS timeout/retry value has expired or the GPS has gotten a
+		 * fix. This check makes sure that a GPS_EVT_SEARCH_TIMEOUT is
+		 * not propagated upon a fix.
 		 */
 		if (!has_fix) {
-			/** If nrf_recv() blocks for more than one second, a fix
-			 *  has been obtained or the GPS has timed out. Submit
-			 *  a delayed timeout work every five seconds to make
-			 *  sure the appropriate event is propagated upon
-			 *  a block.
+			/* If nrf_recv() blocks for more than one second,
+			 * a fix has been obtained or the GPS has timed out.
+			 * Schedule a delayed timeout work to be executed after
+			 * five seconds to make sure the appropriate event is
+			 * propagated upon a block.
 			 */
-			k_delayed_work_submit(&drv_data->timeout_work,
-					      K_SECONDS(5));
+			k_work_schedule(&drv_data->timeout_work, K_SECONDS(5));
 		}
 
 		len = nrf_recv(drv_data->socket, &raw_gps_data,
 			       sizeof(nrf_gnss_data_frame_t), 0);
 
-		k_delayed_work_cancel(&drv_data->timeout_work);
+		/* At this point, it may be too late to cancel this work,
+		 * as it may already be running. In such case, the search
+		 * timeout notification will be generated anyway.
+		 */
+		k_work_cancel_delayable_sync(&drv_data->timeout_work,
+					     &drv_data->work_sync);
 
 		if (len <= 0) {
 			/* Is the GPS stopped, causing this error? */
@@ -305,7 +330,7 @@ wait:
 
 			if (errno == EHOSTDOWN) {
 				LOG_DBG("GPS host is going down, sleeping");
-				cancel_works(drv_data);
+				cancel_works(drv_data, true);
 				atomic_clear(&drv_data->is_active);
 				atomic_set(&drv_data->is_shutdown, 1);
 				nrf_close(drv_data->socket);
@@ -336,6 +361,7 @@ wait:
 				atomic_set(&drv_data->timeout_occurred, 0);
 				evt.type = GPS_EVT_SEARCH_STARTED;
 				notify_event(dev, &evt);
+				start_timestamp = k_uptime_get();
 			}
 
 			has_fix = false;
@@ -364,7 +390,7 @@ wait:
 				 * application, GPS priority is requested.
 				 */
 				if (drv_data->current_cfg.priority) {
-					k_delayed_work_submit(
+					k_work_schedule(
 						&drv_data->blocked_work,
 						K_SECONDS(GPS_BLOCKED_TIMEOUT));
 				}
@@ -379,7 +405,13 @@ wait:
 
 				notify_event(dev, &evt);
 
-				k_delayed_work_cancel(&drv_data->blocked_work);
+				/* This may fail when the work has already
+				 * started, and the GPS priority will be
+				 * then requested anyway.
+				 */
+				k_work_cancel_delayable_sync(
+					&drv_data->blocked_work,
+					&drv_data->work_sync);
 			}
 
 			copy_pvt(&evt.pvt, &raw_gps_data.pvt);
@@ -464,6 +496,7 @@ static int init_thread(const struct device *dev)
 			(k_thread_entry_t)gps_thread, (void *)dev, NULL, NULL,
 			K_PRIO_PREEMPT(CONFIG_NRF9160_GPS_THREAD_PRIORITY),
 			0, K_NO_WAIT);
+	k_thread_name_set(drv_data->thread_id, "nrf9160_gps_driver");
 
 	return 0;
 }
@@ -474,8 +507,9 @@ static int enable_gps(const struct device *dev)
 	int err;
 	enum lte_lc_system_mode system_mode;
 	enum lte_lc_func_mode functional_mode;
+	enum lte_lc_system_mode_preference preference;
 
-	err = lte_lc_system_mode_get(&system_mode);
+	err = lte_lc_system_mode_get(&system_mode, &preference);
 	if (err) {
 		LOG_ERR("Could not get modem system mode, error: %d", err);
 		return err;
@@ -483,7 +517,8 @@ static int enable_gps(const struct device *dev)
 
 	if ((system_mode != LTE_LC_SYSTEM_MODE_GPS) &&
 	    (system_mode != LTE_LC_SYSTEM_MODE_LTEM_GPS) &&
-	    (system_mode != LTE_LC_SYSTEM_MODE_NBIOT_GPS)) {
+	    (system_mode != LTE_LC_SYSTEM_MODE_NBIOT_GPS) &&
+	    (system_mode != LTE_LC_SYSTEM_MODE_LTEM_NBIOT_GPS)) {
 		enum lte_lc_system_mode new_mode = LTE_LC_SYSTEM_MODE_GPS;
 
 		if (system_mode == LTE_LC_SYSTEM_MODE_LTEM) {
@@ -494,7 +529,7 @@ static int enable_gps(const struct device *dev)
 
 		LOG_DBG("GPS mode is not enabled, attempting to enable it");
 
-		err = lte_lc_system_mode_set(new_mode);
+		err = lte_lc_system_mode_set(new_mode, preference);
 		if (err) {
 			LOG_ERR("Could not enable GPS mode, error: %d", err);
 			return err;
@@ -510,7 +545,8 @@ static int enable_gps(const struct device *dev)
 		return err;
 	}
 
-	if (functional_mode != LTE_LC_FUNC_MODE_NORMAL) {
+	if ((functional_mode != LTE_LC_FUNC_MODE_NORMAL) &&
+	    (functional_mode != LTE_LC_FUNC_MODE_ACTIVATE_GNSS)) {
 		LOG_ERR("GPS is not supported in current functional mode");
 		return -EIO;
 	}
@@ -608,7 +644,14 @@ static int start(const struct device *dev, struct gps_config *cfg)
 
 	if (atomic_get(&drv_data->is_active)) {
 		LOG_DBG("GPS is already active. Clean up before restart");
-		cancel_works(drv_data);
+		/* Try to cancel the works (one of them may already be running,
+		 * so it may be too late to cancel it and the corresponding
+		 * notification will be generated anyway).
+		 * Don't wait for the works to become idle to avoid a deadlock
+		 * when the function is called from the context of the work that
+		 * could not be canceled and would need to be finished here.
+		 */
+		cancel_works(drv_data, false);
 	}
 
 	if (atomic_get(&drv_data->is_init) != 1) {
@@ -814,7 +857,15 @@ static int stop(const struct device *dev)
 		return -EHOSTDOWN;
 	}
 
-	cancel_works(drv_data);
+	/* Don't wait here for those works to become idle, as this function
+	 * may be invoked from those works (for example, when the GPS is to be
+	 * stopped directly on the GPS_EVT_SEARCH_TIMEOUT event).
+	 * One of those works may already be running, and the attempt to cancel
+	 * it will fail then, but since the GPS_EVT_SEARCH_STOPPED notification
+	 * is submitted below through the same work queue, it will be processed
+	 * after any notification from that work that could not be canceled.
+	 */
+	cancel_works(drv_data, false);
 
 	if (atomic_get(&drv_data->is_active) == 0) {
 		/* The GPS is already stopped, attempting to stop it again would
@@ -833,7 +884,7 @@ notify:
 	 * in this driver are sent from context different than the calling
 	 * context.
 	 */
-	k_delayed_work_submit(&drv_data->stop_work, K_NO_WAIT);
+	k_work_submit(&drv_data->stop_work);
 
 	return 0;
 }
@@ -924,9 +975,9 @@ static int init(const struct device *dev, gps_event_handler_t handler)
 		}
 	}
 
-	k_delayed_work_init(&drv_data->stop_work, stop_work_fn);
-	k_delayed_work_init(&drv_data->timeout_work, timeout_work_fn);
-	k_delayed_work_init(&drv_data->blocked_work, blocked_work_fn);
+	k_work_init(&drv_data->stop_work, stop_work_fn);
+	k_work_init_delayable(&drv_data->timeout_work, timeout_work_fn);
+	k_work_init_delayable(&drv_data->blocked_work, blocked_work_fn);
 	k_sem_init(&drv_data->thread_run_sem, 0, 1);
 
 	err = init_thread(dev);
@@ -953,6 +1004,6 @@ static const struct gps_driver_api gps_api_funcs = {
 };
 
 DEVICE_DEFINE(nrf9160_gps, CONFIG_NRF9160_GPS_DEV_NAME,
-	      setup, device_pm_control_nop,
+	      setup, NULL,
 	      &gps_drv_data, NULL, POST_KERNEL,
 	      CONFIG_NRF9160_GPS_INIT_PRIO, &gps_api_funcs);

@@ -11,6 +11,8 @@
 #include <sys/__assert.h>
 #include <mpsl.h>
 #include <mpsl_timeslot.h>
+#include <mpsl/mpsl_assert.h>
+#include "mpsl_fem_config_common.h"
 #include "mpsl_fem_internal.h"
 #include "multithreading_lock.h"
 #if defined(CONFIG_NRFX_DPPI)
@@ -32,7 +34,7 @@ const uint32_t z_mpsl_used_nrf_ppi_groups;
 #endif
 #define MPSL_LOW_PRIO (4)
 
-static K_SEM_DEFINE(sem_signal, 0, UINT_MAX);
+static K_SEM_DEFINE(sem_signal, 0, 1);
 static struct k_thread signal_thread_data;
 static K_THREAD_STACK_DEFINE(signal_thread_stack,
 			     CONFIG_MPSL_SIGNAL_STACK_SIZE);
@@ -110,11 +112,19 @@ ISR_DIRECT_DECLARE(mpsl_radio_isr_wrapper)
 	return 1;
 }
 
+#if IS_ENABLED(CONFIG_MPSL_ASSERT_HANDLER)
+void m_assert_handler(const char *const file, const uint32_t line)
+{
+	mpsl_assert_handle((char *) file, line);
+}
+
+#else /* !IS_ENABLED(CONFIG_MPSL_ASSERT_HANDLER) */
 static void m_assert_handler(const char *const file, const uint32_t line)
 {
 	LOG_ERR("MPSL ASSERT: %s, %d", log_strdup(file), line);
 	k_oops();
 }
+#endif /* IS_ENABLED(CONFIG_MPSL_ASSERT_HANDLER) */
 
 static uint8_t m_config_clock_source_get(void)
 {
@@ -162,6 +172,9 @@ static int mpsl_lib_init(const struct device *dev)
 		return err;
 	}
 
+	mpsl_fem_device_config_254_apply_set(
+		IS_ENABLED(CONFIG_MPSL_FEM_DEVICE_CONFIG_254));
+
 #if MPSL_TIMESLOT_SESSION_COUNT > 0
 	err = mpsl_timeslot_session_count_set((void *) timeslot_context,
 			MPSL_TIMESLOT_SESSION_COUNT);
@@ -176,13 +189,6 @@ static int mpsl_lib_init(const struct device *dev)
 			   mpsl_rtc0_isr_wrapper, IRQ_ZERO_LATENCY);
 	IRQ_DIRECT_CONNECT(RADIO_IRQn, MPSL_HIGH_IRQ_PRIORITY,
 			   mpsl_radio_isr_wrapper, IRQ_ZERO_LATENCY);
-
-#if IS_ENABLED(CONFIG_MPSL_FEM)
-	err = mpsl_fem_configure();
-	if (err) {
-		return err;
-	}
-#endif
 
 	return 0;
 }
@@ -204,6 +210,18 @@ static int mpsl_signal_thread_init(const struct device *dev)
 	return 0;
 }
 
+static int mpsl_fem_init(const struct device *dev)
+{
+	ARG_UNUSED(dev);
+
+#if IS_ENABLED(CONFIG_MPSL_FEM)
+	return mpsl_fem_configure();
+#else
+	return 0;
+#endif
+}
+
 SYS_INIT(mpsl_lib_init, PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
 SYS_INIT(mpsl_signal_thread_init, POST_KERNEL,
 	 CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
+SYS_INIT(mpsl_fem_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);

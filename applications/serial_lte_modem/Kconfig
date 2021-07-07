@@ -8,6 +8,11 @@ source "Kconfig.zephyr"
 
 menu "Nordic Serial LTE Modem"
 
+config SLM_CUSTOMIZED
+	bool "Flag for customized functionality"
+	help
+	  Enable this flag to include customized logic.
+
 config SLM_AT_MODE
 	bool "Serial LTE Modem by raw AT mode"
 	default y
@@ -54,12 +59,9 @@ choice
 	help
 		Sets the command terminator used by the serial terminal.
 		Available options are:
-		-  NULL termination
 		-  CR termination
 		-  LF termination
 		-  CR+LF termination
-	config SLM_NULL_TERMINATION
-		bool "NULL termination"
 	config SLM_CR_TERMINATION
 		bool "CR termination"
 	config SLM_LF_TERMINATION
@@ -68,20 +70,23 @@ choice
 		bool "CR+LF termination"
 endchoice
 
-config SLM_AT_HOST_TERMINATION
-	int
-	default 0 if SLM_NULL_TERMINATION
-	default 1 if SLM_CR_TERMINATION
-	default 2 if SLM_LF_TERMINATION
-	default 3 if SLM_CR_LF_TERMINATION
-
 #
 # GPIO wakeup
 #
 config SLM_GPIO_WAKEUP
 	bool "Support of GPIO wakeup"
+	default y
 	help
 	  Enable GPIO wakeup on nRF9160 side.
+
+if SLM_GPIO_WAKEUP
+
+config SLM_START_SLEEP
+	bool "Enter sleep on startup"
+	help
+	  Put nRF9160 into deep sleep mode after startup.
+
+endif
 
 config SLM_INTERFACE_PIN
 	int "Interface GPIO to wake up or exit idle mode"
@@ -115,10 +120,6 @@ config SLM_UDP_POLL_TIME
 	int "Poll time-out in seconds for UDP connection"
 	default 10
 
-config SLM_TCP_CONN_TIME
-	int "Connection time-out in seconds for TCP server"
-	default 60
-
 config SLM_DATAMODE_HWFC
 	bool "UART HWFC for data mode"
 	default y
@@ -140,10 +141,18 @@ config SLM_DATAMODE_SILENCE
 #
 # Configurable services
 #
+config SLM_SMS
+	bool "SMS support in SLM"
+	default y
+	select SMS
+	help
+	  Support SMS send/receive in plain text
+
 rsource "src/gps/Kconfig"
 rsource "src/ftp_c/Kconfig"
 rsource "src/mqtt_c/Kconfig"
 rsource "src/http_c/Kconfig"
+rsource "src/twi/Kconfig"
 
 module = SLM
 module-str = serial modem

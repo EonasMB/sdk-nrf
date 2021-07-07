@@ -56,17 +56,9 @@ static void led_pat_gps_work_fn(struct k_work *work);
 /* Delayed works that is used to make sure the device always reverts back to the
  * device mode or GPS search LED pattern.
  */
-static struct k_delayed_work led_pat_active_work = {
-	.work = Z_WORK_INITIALIZER(led_pat_active_work_fn)
-};
-
-static struct k_delayed_work led_pat_passive_work = {
-	.work = Z_WORK_INITIALIZER(led_pat_passive_work_fn)
-};
-
-static struct k_delayed_work led_pat_gps_work = {
-	.work = Z_WORK_INITIALIZER(led_pat_gps_work_fn)
-};
+static K_WORK_DELAYABLE_DEFINE(led_pat_active_work, led_pat_active_work_fn);
+static K_WORK_DELAYABLE_DEFINE(led_pat_passive_work, led_pat_passive_work_fn);
+static K_WORK_DELAYABLE_DEFINE(led_pat_gps_work, led_pat_gps_work_fn);
 
 /* UI module message queue. */
 #define UI_QUEUE_ENTRY_COUNT		10
@@ -78,6 +70,7 @@ K_MSGQ_DEFINE(msgq_ui, sizeof(struct ui_msg_data),
 static struct module_data self = {
 	.name = "ui",
 	.msg_q = NULL,
+	.supports_shutdown = true,
 };
 
 /* Forward declarations. */
@@ -275,13 +268,13 @@ static void on_state_active_sub_state_gps_active(struct ui_msg_data *msg)
 	if ((IS_EVENT(msg, data, DATA_EVT_DATA_SEND)) ||
 	    (IS_EVENT(msg, data, DATA_EVT_UI_DATA_SEND))) {
 		update_led_pattern(LED_CLOUD_PUBLISHING);
-		k_delayed_work_submit(&led_pat_gps_work, K_SECONDS(5));
+		k_work_reschedule(&led_pat_gps_work, K_SECONDS(5));
 	}
 
 	if (IS_EVENT(msg, data, DATA_EVT_CONFIG_READY)) {
 		if (!msg->module.data.data.cfg.active_mode) {
 			state_set(STATE_PASSIVE);
-			k_delayed_work_submit(&led_pat_gps_work,
+			k_work_reschedule(&led_pat_gps_work,
 					      K_SECONDS(5));
 		}
 	}
@@ -298,13 +291,13 @@ static void on_state_active_sub_state_gps_inactive(struct ui_msg_data *msg)
 	if ((IS_EVENT(msg, data, DATA_EVT_DATA_SEND)) ||
 	    (IS_EVENT(msg, data, DATA_EVT_UI_DATA_SEND))) {
 		update_led_pattern(LED_CLOUD_PUBLISHING);
-		k_delayed_work_submit(&led_pat_active_work, K_SECONDS(5));
+		k_work_reschedule(&led_pat_active_work, K_SECONDS(5));
 	}
 
 	if (IS_EVENT(msg, data, DATA_EVT_CONFIG_READY)) {
 		if (!msg->module.data.data.cfg.active_mode) {
 			state_set(STATE_PASSIVE);
-			k_delayed_work_submit(&led_pat_passive_work,
+			k_work_reschedule(&led_pat_passive_work,
 					      K_SECONDS(5));
 		}
 	}
@@ -321,13 +314,13 @@ static void on_state_passive_sub_state_gps_active(struct ui_msg_data *msg)
 	if ((IS_EVENT(msg, data, DATA_EVT_DATA_SEND)) ||
 	    (IS_EVENT(msg, data, DATA_EVT_UI_DATA_SEND))) {
 		update_led_pattern(LED_CLOUD_PUBLISHING);
-		k_delayed_work_submit(&led_pat_gps_work, K_SECONDS(5));
+		k_work_reschedule(&led_pat_gps_work, K_SECONDS(5));
 	}
 
 	if (IS_EVENT(msg, data, DATA_EVT_CONFIG_READY)) {
 		if (msg->module.data.data.cfg.active_mode) {
 			state_set(STATE_ACTIVE);
-			k_delayed_work_submit(&led_pat_gps_work,
+			k_work_reschedule(&led_pat_gps_work,
 					      K_SECONDS(5));
 		}
 	}
@@ -344,13 +337,13 @@ static void on_state_passive_sub_state_gps_inactive(struct ui_msg_data *msg)
 	if ((IS_EVENT(msg, data, DATA_EVT_DATA_SEND)) ||
 	    (IS_EVENT(msg, data, DATA_EVT_UI_DATA_SEND))) {
 		update_led_pattern(LED_CLOUD_PUBLISHING);
-		k_delayed_work_submit(&led_pat_passive_work, K_SECONDS(5));
+		k_work_reschedule(&led_pat_passive_work, K_SECONDS(5));
 	}
 
 	if (IS_EVENT(msg, data, DATA_EVT_CONFIG_READY)) {
 		if (msg->module.data.data.cfg.active_mode) {
 			state_set(STATE_ACTIVE);
-			k_delayed_work_submit(&led_pat_active_work,
+			k_work_reschedule(&led_pat_active_work,
 					      K_SECONDS(5));
 		}
 	}
@@ -360,16 +353,31 @@ static void on_state_passive_sub_state_gps_inactive(struct ui_msg_data *msg)
 static void on_all_states(struct ui_msg_data *msg)
 {
 	if (IS_EVENT(msg, app, APP_EVT_START)) {
+		int err = module_start(&self);
 
-		module_start(&self);
+		if (err) {
+			LOG_ERR("Failed starting module, error: %d", err);
+			SEND_ERROR(ui, UI_EVT_ERROR, err);
+		}
 
 		state_set(STATE_ACTIVE);
 		sub_state_set(SUB_STATE_GPS_INACTIVE);
 	}
 
 	if (IS_EVENT(msg, util, UTIL_EVT_SHUTDOWN_REQUEST)) {
-		update_led_pattern(LED_ERROR_SYSTEM_FAULT);
-		SEND_EVENT(ui, UI_EVT_SHUTDOWN_READY);
+		switch (msg->module.util.reason) {
+		case REASON_FOTA_UPDATE:
+			update_led_pattern(LED_FOTA_UPDATE_REBOOT);
+			break;
+		case REASON_GENERIC:
+			update_led_pattern(LED_ERROR_SYSTEM_FAULT);
+			break;
+		default:
+			LOG_WRN("Unknown shutdown reason");
+			break;
+		}
+
+		SEND_SHUTDOWN_ACK(ui, UI_EVT_SHUTDOWN_READY, self.id);
 		state_set(STATE_SHUTDOWN);
 	}
 

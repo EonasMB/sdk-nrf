@@ -379,6 +379,7 @@ if (is_dynamic_partition_in_domain)
   share("set(${DOMAIN}_PM_DOTCONF_FILES ${pm_out_dotconf_file})")
   share("set(${DOMAIN}_PM_APP_HEX ${PROJECT_BINARY_DIR}/app.hex)")
   share("set(${DOMAIN}_PM_SIGNED_APP_HEX ${PROJECT_BINARY_DIR}/signed_by_b0_app.hex)")
+  share("list(APPEND ${IMAGE_NAME}BUILD_BYPRODUCTS ${PROJECT_BINARY_DIR}/${merged}.hex)")
 else()
   # This is the root image, generate the global pm_config.h
   # First, include the shared_vars.cmake file for all child images.
@@ -501,6 +502,7 @@ else()
       -o ${final_merged}
       ${domain_hex_files}
       DEPENDS
+      ${domain_hex_files}
       ${global_hex_depends}
       )
 
@@ -508,10 +510,6 @@ else()
     add_custom_target(merged_domains_hex ALL DEPENDS ${final_merged})
   endif()
 
-  # Add ${merged}.hex as the representative hex file for flashing this app.
-  if(TARGET flash)
-    add_dependencies(flash ${merged}_hex)
-  endif()
   set(ZEPHYR_RUNNER_CONFIG_KERNEL_HEX "${final_merged}"
     CACHE STRING "Path to merged image in Intel Hex format" FORCE)
 
@@ -529,11 +527,6 @@ if (final_merged)
   # Multiple domains are included in the build, point to the result of
   # merging the merged hex file for all domains.
   set(merged_hex_to_flash ${final_merged})
-  set_property(
-    TARGET zephyr_property_target
-    APPEND PROPERTY FLASH_DEPENDENCIES
-    ${final_merged}
-    )
 else()
   set(merged_hex_to_flash ${PROJECT_BINARY_DIR}/${merged}.hex)
 endif()

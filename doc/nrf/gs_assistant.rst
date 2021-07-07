@@ -12,6 +12,9 @@ Installing the |NCS| through nRF Connect for Desktop
 On Windows, use the :ref:`gs_app_tcm`.
 On Linux or macOS, use the :ref:`gs_app_gsa`.
 
+.. note::
+   When installing the |NCS| through the |GSA| app, you will not be able to build on the command line using west.
+
 See :ref:`gs_installing_os` for information on the supported operating systems and Zephyr features.
 
 .. _gs_app_tcm:
@@ -47,9 +50,30 @@ Installing the |NCS|
 
 Once you have installed the Toolchain manager, open it in nRF Connect for Desktop.
 
-Click :guilabel:`Settings` in the navigation bar to specify where you want to install the |NCS|.
-Then click the :guilabel:`Install` button next to the |NCS| version that you want to install.
+.. figure:: images/gs-assistant_tm.png
+   :alt: The Toolchain manager window
 
+   The Toolchain manager window
+
+Click :guilabel:`Settings` in the navigation bar to specify where you want to install the |NCS|.
+Then, in :guilabel:`SDK Environments`, click the :guilabel:`Install` button next to the |NCS| version that you want to install.
+
+The |NCS| version of your choice is installed on your machine, and the :guilabel:`Install` button changes to :guilabel:`Open IDE`.
+This button lets you start SEGGER Embedded Studio if you want to start :ref:`gs_programming_ses`.
+
+.. figure:: images/gs-assistant_tm_installed.png
+   :alt: The Toolchain manager options after installing the nRF Connect SDK version, cropped
+
+   The Toolchain Manager options after installing the |NCS| version
+
+Additionally, the dropdown menu becomes available.
+Among other options, this menu lets you open bash and command prompt that use the installed Toolchain manager tools.
+You can use the :guilabel:`Open bash` option from this menu when you start :ref:`gs_programming_cmd`.
+
+.. figure:: images/gs-assistant_tm_dropdown.png
+   :alt: The Toolchain manager dropdown menu for the installed nRF Connect SDK version, cropped
+
+   The Toolchain manager dropdown menu options
 
 .. _gs_app_gsa:
 
@@ -63,6 +87,9 @@ The app allows you to check which of the required tools are already installed on
 It also guides you through installing the parts of the toolchain that you are missing.
 In addition, it will help you clone the |NCS| repositories and set up your first project in |SES|.
 
+.. note::
+   When installing the |NCS| through the |GSA| app, you must build with |SES|.
+   You will not be able to build on the command line using west.
 
 Installing the |GSA|
 ====================
@@ -115,9 +142,9 @@ Once the verification is successful, the vertical progress bar changes color to 
 At the same time, the :guilabel:`Mark done` button changes to :guilabel:`Mark not done`.
 
 .. figure:: images/gs-assistant_UI.gif
-   :alt: Verifying the |NCS| toolchain installation in the |GSA| app
+   :alt: Example of how to verify |NCS| toolchain installation in the |GSA| app
 
-   Verifying the |NCS| toolchain installation
+   Example of how to verify the |NCS| toolchain installation
 
 If there is an issue, the Log section is updated with the related error.
 

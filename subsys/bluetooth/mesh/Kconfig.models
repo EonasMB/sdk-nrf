@@ -12,6 +12,38 @@ config BT_MESH_NRF_MODELS
 	  Common mesh model support modules, required by all Nordic BT mesh
 	  models.
 
+menu "Configuration of the waiting time for acknowledged messages"
+
+config BT_MESH_MOD_ACKD_TIMEOUT_BASE
+	int "The base timeout for acknowledged messages"
+	default 3000
+	help
+	  The base timeout in milliseconds that the model waits for the response
+	  if it is required. The response is typically a status message.
+	  Mesh Profile recommends the waiting time a minimum of 30 seconds.
+
+config BT_MESH_MOD_ACKD_TIMEOUT_PER_HOP
+	int "The per hop timeout for acknowledged messages"
+	default 50
+	help
+	  The timeout in milliseconds that the model adds per hop
+	  to the base response time.
+
+endmenu
+
+if BT_SETTINGS
+
+config BT_MESH_MODEL_SRV_STORE_TIMEOUT
+	int "Delay (in seconds) before storing changes to mesh model servers"
+	range 0 1000000
+	default 0
+	help
+	  Time to wait before storing changes to the mesh model servers.
+	  Effectively the minimum interval of changes.
+
+endif
+
+rsource "vnd/Kconfig"
 
 config BT_MESH_ONOFF_SRV
 	bool "Generic OnOff Server"
@@ -32,6 +64,7 @@ menuconfig BT_MESH_TIME_SRV
 	bool "Time Server"
 	select BT_MESH_NRF_MODELS
 	select BT_MESH_TIME
+	select BT_MESH_MODEL_EXTENSIONS
 	help
 	  Enable mesh Time Server model.
 
@@ -115,6 +148,7 @@ config BT_MESH_PONOFF_SRV
 	select BT_MESH_NRF_MODELS
 	select BT_MESH_DTT_SRV
 	select BT_MESH_ONOFF_SRV
+	select BT_MESH_MODEL_EXTENSIONS
 	imply BT_SETTINGS
 	help
 	  Enable mesh Generic Power OnOff Server model.
@@ -131,6 +165,7 @@ config BT_MESH_PLVL_SRV
 	select BT_MESH_NRF_MODELS
 	select BT_MESH_LVL_SRV
 	select BT_MESH_PONOFF_SRV
+	select BT_MESH_MODEL_EXTENSIONS
 	help
 	  Enable mesh Generic Power Level Server model.
 
@@ -169,6 +204,7 @@ config BT_MESH_LOC_CLI
 config BT_MESH_PROP_SRV
 	bool "Generic Property Server"
 	select BT_MESH_NRF_MODELS
+	select BT_MESH_MODEL_EXTENSIONS
 	help
 	  Enable mesh Generic Property Server models.
 
@@ -209,6 +245,7 @@ config BT_MESH_LIGHTNESS_SRV
 	select BT_MESH_NRF_MODELS
 	select BT_MESH_LVL_SRV
 	select BT_MESH_PONOFF_SRV
+	select BT_MESH_MODEL_EXTENSIONS
 	help
 	  Enable mesh Light Lightness Server model.
 
@@ -245,6 +282,7 @@ menuconfig BT_MESH_LIGHT_CTRL_SRV
 	select BT_MESH_NRF_MODELS
 	select BT_MESH_LIGHTNESS_SRV
 	select BT_MESH_SENSOR
+	select BT_MESH_MODEL_EXTENSIONS
 	help
 	  Enable mesh Light Lightness Control Server model.
 
@@ -343,15 +381,6 @@ config BT_MESH_LIGHT_CTRL_SRV_REG_LUX_STANDBY
 	  reconfigured at runtime by other models in the mesh network.
 endif # BT_MESH_LIGHT_CTRL_SRV_REG
 
-config BT_MESH_LIGHT_CTRL_SRV_STORE_TIMEOUT
-	int "Delay (in seconds) before storing changes to the Light LC Server"
-	range 0 1000000
-	default 5
-	help
-	  Time to wait before storing changes to the Light LC Server's
-	  configuration and state. Effectively the minimum interval of changes.
-
-
 config BT_MESH_LIGHT_CTRL_SRV_OCCUPANCY_DELAY
 	int "Default occupancy delay"
 	range 0 16777214
@@ -439,6 +468,13 @@ config BT_MESH_LIGHT_CTRL_SRV_TIME_MANUAL
 	  be disabled while fading to Standby in manual mode, so making the
 	  manual mode time shorter than this has no effect.
 
+config BT_MESH_LIGHT_CTRL_SRV_RESUME_DELAY
+	int "Resume delay (seconds)"
+	default 0
+	help
+	  Time (in seconds) before re-enabling the Light LC Server control after
+	  it has been disabled, or 0 to disable the resume timer.
+
 comment "Light levels"
 
 config BT_MESH_LIGHT_CTRL_SRV_LVL_ON
@@ -487,6 +523,7 @@ config BT_MESH_LIGHT_CTL_SRV
 	select BT_MESH_NRF_MODELS
 	select BT_MESH_LIGHTNESS_SRV
 	select BT_MESH_LIGHT_TEMP_SRV
+	select BT_MESH_MODEL_EXTENSIONS
 	help
 	  Enable mesh Light CTL Server model.
 
@@ -494,6 +531,7 @@ config BT_MESH_LIGHT_TEMP_SRV
 	bool "Color Tunable Light (CTL) Temperature Server"
 	select BT_MESH_NRF_MODELS
 	select BT_MESH_LVL_SRV
+	select BT_MESH_MODEL_EXTENSIONS
 	help
 	  Enable mesh Light CTL Temperature Server model.
 
@@ -507,6 +545,7 @@ config BT_MESH_LIGHT_XYL_SRV
 	bool "xyL Server"
 	select BT_MESH_NRF_MODELS
 	select BT_MESH_LIGHTNESS_SRV
+	select BT_MESH_MODEL_EXTENSIONS
 	help
 	  Enable Mesh Light xyL Server model.
 
@@ -527,6 +566,7 @@ config BT_MESH_LIGHT_HSL_SRV
 	select BT_MESH_LIGHT_SAT_SRV
 	select BT_MESH_LIGHT_HUE_SRV
 	select BT_MESH_LIGHT_HSL
+	select BT_MESH_MODEL_EXTENSIONS
 	help
 	  Enable Mesh Light HSL Server model.
 
@@ -535,6 +575,7 @@ config BT_MESH_LIGHT_SAT_SRV
 	select BT_MESH_NRF_MODELS
 	select BT_MESH_LVL_SRV
 	select BT_MESH_LIGHT_HSL
+	select BT_MESH_MODEL_EXTENSIONS
 	help
 	  Enable Mesh Light Saturation Server model.
 
@@ -543,6 +584,7 @@ config BT_MESH_LIGHT_HUE_SRV
 	select BT_MESH_NRF_MODELS
 	select BT_MESH_LVL_SRV
 	select BT_MESH_LIGHT_HSL
+	select BT_MESH_MODEL_EXTENSIONS
 	help
 	  Enable Mesh Light Hue Server model.
 
@@ -586,6 +628,7 @@ rsource "Kconfig.sensor"
 menuconfig BT_MESH_SCENE_SRV
 	bool "Scene Server"
 	select BT_MESH_NRF_MODELS
+	select BT_MESH_MODEL_EXTENSIONS
 	depends on BT_SETTINGS
 	help
 	  Enable mesh Scene Server model.
@@ -604,8 +647,6 @@ config BT_MESH_SCENE_CLI
 	help
 	  Enable mesh Scene Client model.
 
-endmenu
-
 config BT_MESH_SCHEDULER_CLI
 	bool "Scheduler Client"
 	select BT_MESH_NRF_MODELS
@@ -618,5 +659,8 @@ config BT_MESH_SCHEDULER_SRV
 	select BT_MESH_ONOFF_SRV
 	select BT_MESH_SCENE_SRV
 	select BT_MESH_TIME_SRV
+	select BT_MESH_MODEL_EXTENSIONS
 	help
 	  Enable Mesh Scheduler Server model.
+
+endmenu

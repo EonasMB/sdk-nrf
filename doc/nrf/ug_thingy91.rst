@@ -24,8 +24,8 @@ The |NCS| provides support for developing applications on the Thingy:91.
 Connecting to Thingy:91 serial ports
 ************************************
 
-For connecting to Thingy:91, you can use LTE Link Monitor, Trace Collector applications, or a serial terminal.
-In the case of LTE Link Monitor or Trace Collector applications, the baud rate for the communication is set automatically.
+For connecting to Thingy:91, you can use `LTE Link Monitor`_, `Trace Collector`_, or a serial terminal.
+In the case of LTE Link Monitor or Trace Collector, the baud rate for the communication is set automatically.
 
 If you prefer to use a standard serial terminal, the baud rate has to be specified manually.
 
@@ -78,7 +78,7 @@ LTE-M / NB-IoT switching
 
 Thingy:91 has a multimode modem, which enables it to support automatic switching between LTE-M and NB-IoT.
 A built-in parameter in the Thingy:91 firmware determines whether the modem first attempts to connect in LTE-M or NB-IoT mode.
-If the modem fails to connect using this preferred mode within the default time-out period (10 minutes), the modem switches to the other mode.
+If the modem fails to connect using this preferred mode within the default timeout period (10 minutes), the modem switches to the other mode.
 
 .. |An nRF9160-based device| replace:: A Thingy:91
 
@@ -141,6 +141,28 @@ You can update the modem firmware of Thingy:91 using any of the following method
 * Using an external debug probe such as nRF9160 DK or any J-Link device supporting ARM Cortex-M33
 
 See `Programming the Thingy:91 modem`_ for the detailed steps to update the modem firmware.
+
+Using RSA signing for MCUboot
+=============================
+In order to be compatible with the factory-programmed bootloader on Thingy:91, the signing algorithm must be changed from the default MCUboot algorithm.
+To change the algorithm, create the file :file:`child_image/mcuboot.conf` in your application folder and add the following content:
+
+.. parsed-literal::
+   :class: highlight
+
+   CONFIG_BOOT_SIGNATURE_TYPE_RSA=y
+   CONFIG_BOOT_SIGNATURE_KEY_FILE="root-rsa-2048.pem"
+
+The build system will include these configurations and enable RSA signing of the images for backward compatibility with the MCUboot versions that precede the |NCS| v1.4.0.
+Note that the configurations in such a file will also be taken for other build targets, besides Thingy:91.
+
+.. note::
+
+   Changing the signing algorithm enables MCUboot to use the default RSA keys, so that it is compatible with the factory-programmed bootloader present on the Thingy:91.
+   These keys must only be used for development.
+   In a final product, you must use your own, secret keys.
+   See :ref:`ug_fw_update_development_keys` for more information.
+
 
 .. _building_pgming:
 
@@ -231,7 +253,7 @@ Building and programming using SEGGER Embedded Studio
 #. To build the sample or application:
 
    a. Select your project in the Project Explorer.
-   #. From the menu, select :guilabel:`Build` -> :guilabel:`Build Solution`.
+   #. From the menu, select :guilabel:`Build` > :guilabel:`Build Solution`.
       This builds the project.
 
    You can find the output of the build, which includes the merged HEX file containing both the application and the SPM, in the ``zephyr`` subfolder in the build directory.
@@ -253,8 +275,8 @@ Building and programming using SEGGER Embedded Studio
 .. prog_extdebugprobe_end
 ..
 
-   e. In SES, select :guilabel:`Target` -> :guilabel:`Connect J-Link`.
-   #. Select :guilabel:`Target` -> :guilabel:`Download zephyr/merged.hex` to program the sample or application onto Thingy:91.
+   e. In SES, select :guilabel:`Target` > :guilabel:`Connect J-Link`.
+   #. Select :guilabel:`Target` > :guilabel:`Download zephyr/merged.hex` to program the sample or application onto Thingy:91.
    #. The device will reset and run the programmed sample or application.
 
 .. _build_pgm_cmdline:

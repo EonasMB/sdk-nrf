@@ -20,7 +20,7 @@
 
 /* Include required APIs for TrustZone-M */
 #include <arm_cmse.h>
-#include <cortex_m/tz.h>
+#include <aarch32/cortex_m/tz.h>
 
 #include <nrfx.h>
 
@@ -252,7 +252,7 @@ static bool usel_or_split(uint8_t id)
 	return present && (usel || split);
 }
 
-static int spm_config_peripheral(uint8_t id, bool dma_present)
+static int config_peripheral(uint8_t id, bool dma_present, bool lock)
 {
 	/* Set a peripheral to Non-Secure state, if
 	 * - it is present
@@ -268,7 +268,7 @@ static int spm_config_peripheral(uint8_t id, bool dma_present)
 	if (usel_or_split(id)) {
 		NRF_SPU->PERIPHID[id].PERM = PERIPH_PRESENT | PERIPH_NONSEC |
 			(dma_present ? PERIPH_DMA_NOSEP : 0) |
-			PERIPH_LOCK;
+			(lock ? PERIPH_LOCK : 0);
 	}
 
 	/* Even for non-present peripherals we force IRQs to be routed
@@ -276,6 +276,16 @@ static int spm_config_peripheral(uint8_t id, bool dma_present)
 	 */
 	irq_target_state_set(id, IRQ_TARGET_STATE_NON_SECURE);
 	return 0;
+}
+
+static int spm_config_peripheral(uint8_t id, bool dma_present)
+{
+	return config_peripheral(id, dma_present, true);
+}
+
+static int spm_config_unlocked_peripheral(uint8_t id, bool dma_present)
+{
+	return config_peripheral(id, dma_present, false);
 }
 
 static void spm_dppi_configure(uint32_t mask)
@@ -397,8 +407,14 @@ static void spm_config_peripherals(void)
 #ifdef NRF_LPCOMP
 		PERIPH("NRF_LPCOMP", NRF_LPCOMP, CONFIG_SPM_NRF_LPCOMP_NS),
 #endif
+#ifdef NRF_PDM
+		PERIPH("NRF_PDM", NRF_PDM, CONFIG_SPM_NRF_PDM_NS),
+#endif
 #ifdef NRF_PDM0
 		PERIPH("NRF_PDM0", NRF_PDM0, CONFIG_SPM_NRF_PDM0_NS),
+#endif
+#ifdef NRF_I2S
+		PERIPH("NRF_I2S", NRF_I2S, CONFIG_SPM_NRF_I2S_NS),
 #endif
 #ifdef NRF_I2S0
 		PERIPH("NRF_I2S0", NRF_I2S0, CONFIG_SPM_NRF_I2S0_NS),
@@ -544,8 +560,11 @@ void spm_jump(void)
 		 */
 
 		/* Configure UARTE0 as non-secure */
-		spm_config_peripheral(
-			NRFX_PERIPHERAL_ID_GET(NRF_UARTE0), 0);
+		uint8_t uart_id = NRFX_PERIPHERAL_ID_GET(NRF_UARTE0);
+
+		IS_ENABLED(CONFIG_SPM_SHARE_CONSOLE_UART) ?
+			spm_config_unlocked_peripheral(uart_id, 0) :
+			spm_config_peripheral(uart_id, 0);
 
 		__DSB();
 		__ISB();

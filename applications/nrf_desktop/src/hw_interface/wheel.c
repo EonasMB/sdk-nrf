@@ -15,10 +15,10 @@
 
 #include "event_manager.h"
 #include "wheel_event.h"
-#include "power_event.h"
+#include <caf/events/power_event.h>
 
 #define MODULE wheel
-#include "module_state_event.h"
+#include <caf/events/module_state_event.h>
 
 #include <logging/log.h>
 LOG_MODULE_REGISTER(MODULE, CONFIG_DESKTOP_WHEEL_LOG_LEVEL);
@@ -49,7 +49,7 @@ static const struct device *qdec_dev;
 static const struct device *gpio_dev;
 static struct gpio_callback gpio_cbs[2];
 static struct k_spinlock lock;
-static struct k_delayed_work idle_timeout;
+static struct k_work_delayable idle_timeout;
 static bool qdec_triggered;
 static enum state state;
 
@@ -199,8 +199,8 @@ static int enable_qdec(enum state next_state)
 {
 	__ASSERT_NO_MSG(next_state == STATE_ACTIVE);
 
-	int err = device_set_power_state(qdec_dev, DEVICE_PM_ACTIVE_STATE,
-					 NULL, NULL);
+	int err = pm_device_state_set(qdec_dev, PM_DEVICE_STATE_ACTIVE,
+				      NULL, NULL);
 	if (err) {
 		LOG_ERR("Cannot activate QDEC");
 		return err;
@@ -214,7 +214,7 @@ static int enable_qdec(enum state next_state)
 		state = next_state;
 		if (SENSOR_IDLE_TIMEOUT > 0) {
 			qdec_triggered = false;
-			k_delayed_work_submit(&idle_timeout,
+			k_work_reschedule(&idle_timeout,
 					      K_MSEC(SENSOR_IDLE_TIMEOUT));
 		}
 	}
@@ -238,15 +238,16 @@ static int disable_qdec(enum state next_state)
 		return err;
 	}
 
-	err = device_set_power_state(qdec_dev, DEVICE_PM_SUSPEND_STATE,
-				     NULL, NULL);
+	err = pm_device_state_set(qdec_dev, PM_DEVICE_STATE_SUSPEND,
+				  NULL, NULL);
 	if (err) {
 		LOG_ERR("Cannot suspend QDEC");
 	} else {
 		err = setup_wakeup();
 		if (!err) {
 			if (SENSOR_IDLE_TIMEOUT > 0) {
-				k_delayed_work_cancel(&idle_timeout);
+				/* Cancel cannot fail if executed from another work's context. */
+				(void)k_work_cancel_delayable(&idle_timeout);
 			}
 			state = next_state;
 		}
@@ -269,7 +270,7 @@ static void idle_timeout_fn(struct k_work *work)
 		}
 	} else {
 		qdec_triggered = false;
-		k_delayed_work_submit(&idle_timeout,
+		k_work_reschedule(&idle_timeout,
 				      K_MSEC(SENSOR_IDLE_TIMEOUT));
 	}
 
@@ -281,7 +282,7 @@ static int init(void)
 	__ASSERT_NO_MSG(state == STATE_DISABLED);
 
 	if (SENSOR_IDLE_TIMEOUT > 0) {
-		k_delayed_work_init(&idle_timeout, idle_timeout_fn);
+		k_work_init_delayable(&idle_timeout, idle_timeout_fn);
 	}
 
 	qdec_dev = device_get_binding(DT_LABEL(DT_NODELABEL(qdec)));

@@ -10,12 +10,12 @@
 #include <settings/settings.h>
 
 #define MODULE ble_bond
-#include "module_state_event.h"
-#include "click_event.h"
-#include "ble_event.h"
+#include <caf/events/module_state_event.h>
+#include <caf/events/click_event.h>
+#include <caf/events/ble_common_event.h>
 #include "selector_event.h"
 #include "config_event.h"
-#include "power_event.h"
+#include <caf/events/power_event.h>
 
 #include <logging/log.h>
 LOG_MODULE_REGISTER(MODULE, CONFIG_DESKTOP_BLE_BOND_LOG_LEVEL);
@@ -134,7 +134,7 @@ static bool bt_stack_id_lut_valid;
 #endif
 
 
-static struct k_delayed_work timeout;
+static struct k_work_delayable timeout;
 
 static int settings_set(const char *key, size_t len_rd,
 			settings_read_cb read_cb, void *cb_arg)
@@ -277,7 +277,7 @@ static int shell_show_peers(const struct shell *shell, size_t argc, char **argv)
 
 	char addr_str[BT_ADDR_LE_STR_LEN];
 	bt_addr_le_t addrs[CONFIG_BT_ID_MAX];
-	size_t count;
+	size_t count = CONFIG_BT_ID_MAX;
 
 	bt_id_get(addrs, &count);
 	for (size_t i = 0; i < count; i++) {
@@ -299,7 +299,8 @@ static void cancel_operation(void)
 {
 	LOG_INF("Cancel peer operation");
 
-	k_delayed_work_cancel(&timeout);
+	/* Cancel cannot fail if executed from another work's context. */
+	(void)k_work_cancel_delayable(&timeout);
 
 	struct ble_peer_operation_event *event = new_ble_peer_operation_event();
 
@@ -540,10 +541,13 @@ static void handle_click(enum click click)
 						work_delay = CONFIRM_TIMEOUT;
 					}
 
-					k_delayed_work_submit(&timeout,
+					k_work_reschedule(&timeout,
 							      work_delay);
 				} else {
-					k_delayed_work_cancel(&timeout);
+					/* Cancel cannot fail if executed from another work's
+					 * context.
+					 */
+					(void)k_work_cancel_delayable(&timeout);
 				}
 
 				return;
@@ -705,7 +709,7 @@ static int init(void)
 	}
 
 	if (IS_ENABLED(CONFIG_DESKTOP_BLE_PEER_CONTROL)) {
-		k_delayed_work_init(&timeout, timeout_handler);
+		k_work_init_delayable(&timeout, timeout_handler);
 	}
 
 	load_identities();
@@ -736,9 +740,11 @@ static bool ble_peer_event_handler(const struct ble_peer_event *event)
 		/* Ensure that connected peer will have time to establish
 		 * security.
 		 */
-		if ((k_delayed_work_remaining_get(&timeout) < ERASE_ADV_NEW_CONN_TIMEOUT_MS) &&
+		uint32_t remains = k_ticks_to_ms_ceil32(k_work_delayable_remaining_get(&timeout));
+
+		if ((remains < ERASE_ADV_NEW_CONN_TIMEOUT_MS) &&
 		    !erase_adv_was_extended) {
-			k_delayed_work_submit(&timeout,
+			k_work_reschedule(&timeout,
 					      ERASE_ADV_NEW_CONN_TIMEOUT);
 			erase_adv_was_extended = true;
 		}
@@ -779,7 +785,8 @@ static bool ble_peer_event_handler(const struct ble_peer_event *event)
 		event->bt_stack_id = get_bt_stack_peer_id(cur_peer_id);
 
 		EVENT_SUBMIT(event);
-		k_delayed_work_cancel(&timeout);
+		/* Cancel cannot fail if executed from another work's context. */
+		(void)k_work_cancel_delayable(&timeout);
 	}
 
 	return false;
@@ -883,7 +890,7 @@ static void config_set(const uint8_t opt_id, const uint8_t *data, const size_t s
 			erase_adv_confirm();
 			state = STATE_ERASE_ADV;
 
-			k_delayed_work_submit(&timeout,
+			k_work_reschedule(&timeout,
 					      ERASE_ADV_TIMEOUT);
 
 		} else if (IS_ENABLED(CONFIG_BT_CENTRAL)) {

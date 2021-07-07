@@ -173,7 +173,8 @@ static void connection_state_set(enum connection_state new_state)
 		break;
 	case STATE_INIT:
 		if (new_state != STATE_CONNECTING &&
-		    new_state != STATE_INIT) {
+		    new_state != STATE_INIT &&
+		    new_state != STATE_CONNECTED) {
 			notify_error = true;
 		}
 		break;
@@ -942,6 +943,27 @@ static int connect_client(struct azure_iot_hub_config *cfg)
 	/* Set the current socket and start reading from it in polling thread */
 	conn_config.socket = client.transport.tls.sock;
 
+	if (IS_ENABLED(CONFIG_AZURE_IOT_HUB_SEND_TIMEOUT)) {
+		struct timeval timeout = {
+			.tv_sec = CONFIG_AZURE_IOT_HUB_SEND_TIMEOUT_SEC
+		};
+
+		err = setsockopt(conn_config.socket,
+				 SOL_SOCKET,
+				 SO_SNDTIMEO,
+				 &timeout,
+				 sizeof(timeout));
+		if (err == -1) {
+			LOG_WRN("Failed to set timeout, errno: %d", errno);
+
+			/* Don't propagate this as an error. */
+			err = 0;
+		} else {
+			LOG_DBG("Using send socket timeout of %d seconds",
+				CONFIG_AZURE_IOT_HUB_SEND_TIMEOUT_SEC);
+		}
+	}
+
 	return 0;
 }
 
@@ -1404,6 +1426,22 @@ start:
 			LOG_DBG("Connection was unexpectedly closed");
 			break;
 		}
+	}
+
+
+	/* Upon a socket error, disconnect the client and notify the
+	 * application. If the client has already been disconnected this has
+	 * occurred via an MQTT DISCONNECT event and the application has
+	 * already been notified.
+	 */
+	if (!connection_state_verify(STATE_INIT)) {
+		struct azure_iot_hub_evt evt = {
+			.type = AZURE_IOT_HUB_EVT_DISCONNECTED
+		};
+
+		/* We need to call disconnect here to ensure that the MQTT socket is closed. */
+		azure_iot_hub_disconnect();
+		azure_iot_hub_notify_event(&evt);
 	}
 
 	/* Always revert to the initialization state if the socket has been

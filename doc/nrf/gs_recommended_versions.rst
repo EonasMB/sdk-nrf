@@ -141,7 +141,7 @@ Required Python dependencies
 The following table shows the Python packages that are required for working with |NCS| v\ |version|.
 If no version is specified, the default version provided with pip is recommended.
 If a version is specified, it is important that the installed version matches the required version.
-See :ref:`additional_deps` for instructions on how to install the Python dependencies.
+See :ref:`additional_deps` for instructions on how to install the Python dependencies and :ref:`gs_updating` for information about how to keep them updated.
 
 Building and running applications, samples, and tests
 =====================================================
@@ -182,6 +182,8 @@ Building and running applications, samples, and tests
    * - windows-curses (only Windows)
      - |windows-curses_ver|
 
+.. _python_req_documentation:
+
 Building documentation
 ======================
 
@@ -198,8 +200,8 @@ Building documentation
      - |breathe_ver|
    * - sphinx
      - |sphinx_ver|
-   * - sphinx_rtd_theme
-     - |sphinx_rtd_theme_ver|
+   * - sphinx-ncs-theme
+     - |sphinx-ncs-theme_ver|
    * - sphinx-tabs
      - |sphinx-tabs_ver|
    * - sphinxcontrib-svg2pdfconverter
